@@ -141,4 +141,50 @@ class CommerceTest extends TestCase
         $this->getJson('/saas/api/v1/tenants/'.$other->id.'/tickets')->assertForbidden();
         $this->getJson($url)->assertJsonCount(1, 'data');
     }
+
+    public function test_renewal_extends_remaining_term_without_creating_another_environment(): void
+    {
+        $this->freezeTime();
+        Queue::fake();
+        [$tenant] = $this->company();
+        ServiceSubscription::create(['tenant_id' => $tenant->id, 'payment_reference' => 'previous-test-payment', 'status' => 'active', 'expires_at' => now()->addDays(10)]);
+        $quote = QuoteRequest::factory()->create(['tenant_id' => $tenant->id]);
+        $order = Order::factory()->create(['quote_request_id' => $quote->id, 'status' => 'pending_payment']);
+
+        app(CommerceService::class)->confirmPayment($order->id, 'RENEWAL-TEST-01', 1000000);
+
+        $this->assertSame(now()->addDays(40)->toDateTimeString(), ServiceSubscription::where('tenant_id', $tenant->id)->first()->expires_at->toDateTimeString());
+        $this->assertDatabaseCount('payments', 1);
+    }
+
+    public function test_one_bank_reference_cannot_pay_for_two_orders(): void
+    {
+        Queue::fake();
+        [$tenant] = $this->company();
+        $first = Order::factory()->create(['quote_request_id' => QuoteRequest::factory()->create(['tenant_id' => $tenant->id])->id, 'status' => 'pending_payment']);
+        $second = Order::factory()->create(['quote_request_id' => QuoteRequest::factory()->create(['tenant_id' => $tenant->id])->id, 'status' => 'pending_payment']);
+        $service = app(CommerceService::class);
+        $service->confirmPayment($first->id, 'SAME-REF-TEST', 1000000);
+        try {
+            $service->confirmPayment($second->id, 'SAME-REF-TEST', 1000000);
+            $this->fail('Duplicate bank reference must be rejected');
+        } catch (HttpException $e) {
+            $this->assertSame(409, $e->getStatusCode());
+        }
+        $this->assertDatabaseHas('orders', ['id' => $second->id, 'status' => 'pending_payment']);
+        $this->assertDatabaseCount('payments', 1);
+        $this->assertDatabaseCount('environments', 1);
+    }
+
+    public function test_cancelled_order_cannot_activate_subscription(): void
+    {
+        $order = Order::factory()->create(['status' => 'cancelled']);
+        try {
+            app(CommerceService::class)->confirmPayment($order->id, 'CANCELLED-ORDER-TEST', 1000000);
+            $this->fail('Cancelled order must be rejected');
+        } catch (HttpException $e) {
+            $this->assertSame(409, $e->getStatusCode());
+        }
+        $this->assertDatabaseCount('service_subscriptions', 0);
+    }
 }
