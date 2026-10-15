@@ -16,6 +16,10 @@ Cổng quản trị nhiều công ty độc lập bằng **Laravel 13 + Vue 3 + 
 - Tạo công ty/thành viên và xác nhận thuê bao từ console TN20; không có mật khẩu quản trị mặc định.
 - Mô phỏng cấp phát chạy được; adapter tùy chọn Hetzner Cloud + Cloudflare gọi API tạo VM/DNS rồi chạy Ansible cài bộ NAC20 có SHA-256 cố định.
 - Giao diện xem trạng thái thật của tác vụ; môi trường mô phỏng ghi rõ chưa tạo máy. Cài gói xong chuyển `awaiting_configuration`, không tự nhận đã sẵn sàng vận hành.
+- Trang `/san-pham` giới thiệu giải pháp và ba nhóm gói, tất cả **Liên hệ báo giá**; không có giá bán mặc định.
+- Khách đăng ký không gian mới, gửi nhu cầu, xem báo giá riêng, xác nhận/hủy đơn và báo đã chuyển khoản. Chủ công ty/admin được xem lịch sử giao dịch và thuê bao; operator/viewer không xem tài chính.
+- TN20 phát hành báo giá và đối soát từ console; kiểm tra đúng số tiền, tham chiếu chống trùng, gia hạn theo thời gian còn lại. Chỉ sau xác nhận mới kích hoạt dịch vụ và tạo tác vụ cấp phát nếu được cấu hình.
+- Yêu cầu hỗ trợ và phản hồi trong cổng, phân trang lịch sử theo công ty. Chưa có email tự động hoặc hóa đơn thuế điện tử.
 
 ## Cài và vận hành
 
@@ -42,7 +46,7 @@ Web lắng nghe `http://127.0.0.1:8088`; đặt reverse proxy HTTPS phía trư�
 
 ## Phần chưa cung cấp
 
-Thanh toán/webhook tự động, MFA/khôi phục mật khẩu, mời thành viên qua email, quản lý MAC qua cổng SaaS, SSO sang NAC, đăng ký Connector một lần, tự hoàn tất trình cấu hình NAC/TLS, backup/khôi phục tự động và HA. Các mục này không được coi là đã hoạt động chỉ vì có thiết kế.
+Thanh toán/webhook tự động, MFA/khôi phục mật khẩu, xác minh email, mời thành viên qua email, quản lý MAC qua cổng SaaS, SSO sang NAC, đăng ký Connector một lần, tự hoàn tất trình cấu hình NAC/TLS, backup/khôi phục tự động và HA. Các mục này không được coi là đã hoạt động chỉ vì có thiết kế. Chuyển khoản hiện đối soát thủ công, cần TN20 cấu hình thông tin ngân hàng thật trước khi tiếp nhận.
 
 Chưa có thông tin nhà cung cấp hạ tầng/DNS của TN20. Hetzner và Cloudflare là adapter tùy chọn, có kiểm thử HTTP giả lập; không khẳng định đó là hạ tầng TN20 đang dùng. Không có máy thật, DNS hoặc giao dịch thanh toán nào được tạo bởi quá trình phát triển này.
 

@@ -37,7 +37,7 @@ docker compose up -d
 docker compose ps
 ```
 
-Lệnh tạo công ty hỏi mật khẩu tương tác, tối thiểu 12 ký tự. Nếu email đã tồn tại, lệnh gán chủ công ty cho người dùng đó, không đổi mật khẩu; chỉ người vận hành có quyền console được dùng. Không có tài khoản công khai tự đăng ký hoặc mật khẩu mặc định.
+Lệnh tạo công ty hỏi mật khẩu tương tác, tối thiểu 12 ký tự. Nếu email đã tồn tại, lệnh gán chủ công ty cho người dùng đó, không đổi mật khẩu; chỉ người vận hành có quyền console được dùng. Không có mật khẩu mặc định. Khách có thể tự tạo tài khoản mới khi `CUSTOMER_REGISTRATION_ENABLED=true`; mỗi đăng ký chỉ tạo công ty riêng, chưa có thuê bao hoặc máy chủ. Đặt false nếu chỉ cấp tài khoản qua TN20. Bản đầu chưa xác minh email/MFA; cần hoàn thiện trước khi mở rộng công khai.
 
 Web chỉ bind loopback `127.0.0.1:8088`. Đặt reverse proxy TLS tin cậy phía trước. Khi proxy truyền giao thức HTTPS vào ứng dụng, cấu hình danh sách trusted proxy cụ thể trong Laravel; không tin mọi header từ Internet. Cấu hình Nginx trong repo chưa tự cấp chứng thư cho cổng SaaS.
 
@@ -141,3 +141,49 @@ Trạng thái `awaiting_configuration` có nghĩa **chưa sẵn sàng bàn giao*
 Sao lưu MySQL, khóa ứng dụng và cấu hình vận hành theo chính sách TN20; bảo vệ bản sao lưu như dữ liệu khách hàng. Named volume không thay thế bản sao lưu. Kiểm thử phục hồi trên môi trường cách ly.
 
 Triển khai release đã kiểm tra, build image, sao lưu DB rồi chạy migration có kế hoạch. Không tự chạy `migrate:fresh` trên máy có dữ liệu. Không tự đổi APP_KEY. Worker phải khởi động lại sau khi thay mã/cấu hình; giữ phiên bản app và worker nhất quán.
+
+## 10. Giới thiệu sản phẩm, báo giá và thanh toán
+
+Trang `/san-pham` công khai giới thiệu giải pháp, quy trình và ba nhóm gói. Tất cả hiển thị **Liên hệ báo giá**, theo lựa chọn của TN20. Không có giá thử nghiệm hoặc giá bán tự đặt. Khách đăng nhập/đăng ký rồi vào **Tư vấn & báo giá**, gửi số thiết bị, chi nhánh và yêu cầu; yêu cầu chưa tự tạo đơn có giá hoặc cấp dịch vụ.
+
+TN20 xem yêu cầu và phát hành báo giá riêng từ console:
+
+```bash
+docker compose exec app php artisan saas:sales
+docker compose exec app php artisan saas:quote ID_YEU_CAU SO_TIEN_VND --days=SO_NGAY --terms="Điền đầy đủ phạm vi, giá, thuế/phí, thời hạn và điều kiện nghiệm thu đã thống nhất"
+```
+
+Các chuỗi viết hoa là giá trị cần thay, không phải lệnh mẫu có thể chạy nguyên văn. Giá phải nguyên VND, từ 1.000 đến 1.000.000.000.000; thời hạn 1–366 ngày. Báo giá có hạn xác nhận 7 ngày. Để sửa báo giá đã phát hành, hủy đơn cũ theo quy trình và tạo yêu cầu/báo giá mới; không sửa trực tiếp số tiền của đơn đã xác nhận.
+
+Khách xem báo giá tại **Đơn hàng**, đọc điều khoản, xác nhận hoặc hủy trước khi báo chuyển khoản. Báo giá lưu số tiền và điều khoản riêng, không bị đổi theo danh mục sản phẩm. Chi tiết đơn không thay thế hóa đơn thuế.
+
+Chỉ bật chuyển khoản sau khi có tài khoản ngân hàng chính thức của TN20:
+
+```dotenv
+BANK_PAYMENT_ENABLED=true
+BANK_NAME=
+BANK_ACCOUNT_NUMBER=
+BANK_ACCOUNT_HOLDER=
+```
+
+Điền đầy đủ ba trường rồi khởi động lại app/worker. Nếu thiếu hoặc tắt, cổng không hiển thị số tài khoản giả và không cho báo đã chuyển khoản. Không lưu thông tin thẻ. Chưa có QR ngân hàng, cổng thẻ, webhook hoặc thao tác chuyển tiền tự động.
+
+Sau khi khách xác nhận đơn, nội dung chuyển khoản là mã đơn `N20-...`. Khách bấm **Tôi đã chuyển khoản** chỉ chuyển đơn sang **Chờ đối soát**, không tự kích hoạt. TN20 kiểm tra số tiền và giao dịch thực nhận trước khi chạy:
+
+```bash
+docker compose exec app php artisan saas:order-paid ID_DON THAM_CHIEU_THUC_NHAN SO_TIEN_VND
+```
+
+Số tiền phải đúng báo giá; tham chiếu chỉ được dùng một lần. Gọi lặp đúng đơn/tham chiếu/số tiền không cộng thêm thời gian hoặc tạo thêm máy. Gia hạn cộng từ ngày hết hạn còn hiệu lực, nếu đã hết hạn thì tính từ thời điểm đối soát. Đã có môi trường thì giữ môi trường đó; đổi gói không tự nâng cấu hình máy. Khi chưa có môi trường, hệ thống tự tạo tác vụ nếu simulation hoặc đã bật cấp phát thật. Cài NAC xong vẫn chờ cấu hình/nghiệm thu.
+
+**Lịch sử thanh toán** chỉ hiện giao dịch TN20 đã xác nhận. **Dịch vụ của tôi** hiển thị gói/thời hạn. Dữ liệu theo công ty; owner/admin được xem tài chính, operator/viewer không được xem. Chưa có hoàn tiền, điều chỉnh thuế hoặc xuất hóa đơn điện tử tự động; các trường hợp chuyển sai/thiếu/thừa phải xử lý đối soát riêng, không ép đơn thành paid.
+
+## 11. Yêu cầu hỗ trợ trong cổng
+
+Thành viên tạo yêu cầu tại **Hỗ trợ**, không gửi khóa/mật khẩu. TN20 xem ID qua `saas:sales` rồi phản hồi:
+
+```bash
+docker compose exec app php artisan saas:ticket-reply ID_YEU_CAU_HO_TRO "Nội dung phản hồi" --close
+```
+
+Bỏ `--close` để giữ trạng thái đã phản hồi. Nội dung nằm trong ứng dụng, không tự gửi email. Lịch sử có phân trang và giới hạn theo công ty. Bản đầu chưa có tệp đính kèm hoặc hội thoại nhiều lượt; phản hồi console cập nhật phần trả lời của yêu cầu.

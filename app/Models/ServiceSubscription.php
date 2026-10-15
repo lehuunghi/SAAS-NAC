@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class ServiceSubscription extends Model
 {
-    protected $fillable = ['tenant_id', 'status', 'payment_reference', 'expires_at'];
+    protected $fillable = ['tenant_id', 'status', 'payment_reference', 'expires_at', 'plan_code'];
 
     protected function casts(): array
     {

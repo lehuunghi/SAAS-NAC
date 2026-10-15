@@ -4,9 +4,13 @@ use App\Jobs\ProvisionEnvironment;
 use App\Models\AuditEvent;
 use App\Models\Environment;
 use App\Models\Operation;
+use App\Models\Order;
+use App\Models\QuoteRequest;
 use App\Models\ServiceSubscription;
+use App\Models\SupportTicket;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Services\CommerceService;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -100,3 +104,45 @@ Artisan::command('saas:dispatch-pending', function () {
 })->purpose('Đưa tác vụ queued vào Redis nếu enqueue trước đó bị gián đoạn');
 
 Schedule::command('saas:dispatch-pending')->everyMinute()->withoutOverlapping();
+
+Artisan::command('saas:sales', function () {
+    $this->table(['Yêu cầu', 'Công ty', 'Gói', 'Thiết bị', 'Chi nhánh', 'Trạng thái'], QuoteRequest::latest('id')->limit(50)->get(['id', 'tenant_id', 'plan_code', 'devices', 'branches', 'status'])->toArray());
+    $this->table(['Đơn', 'Công ty', 'Số tiền VND', 'Trạng thái'], Order::latest('id')->limit(50)->get(['id', 'tenant_id', 'amount_vnd', 'status'])->toArray());
+    $this->table(['Hỗ trợ', 'Công ty', 'Tiêu đề', 'Trạng thái'], SupportTicket::latest('id')->limit(30)->get(['id', 'tenant_id', 'subject', 'status'])->toArray());
+})->purpose('TN20 xem yêu cầu báo giá, đơn hàng và yêu cầu hỗ trợ');
+
+Artisan::command('saas:quote {request} {amount} {--days=30} {--terms=}', function () {
+    $amount = filter_var($this->argument('amount'), FILTER_VALIDATE_INT);
+    $days = filter_var($this->option('days'), FILTER_VALIDATE_INT);
+    if (! $amount || ! $days || mb_strlen($this->option('terms')) < 10) {
+        $this->error('Nhập số tiền nguyên VND, số ngày và --terms mô tả đầy đủ giá, thuế/phí và phạm vi dịch vụ.');
+
+        return 1;
+    }
+    if (! $this->confirm('Phát hành báo giá '.$amount.' VND cho yêu cầu #'.$this->argument('request').'?')) {
+        return 1;
+    }
+    $order = app(CommerceService::class)->issueQuote((int) $this->argument('request'), $amount, $days, $this->option('terms'));
+    $this->info('Đã phát hành '.$order->number.' (ID '.$order->id.').');
+})->purpose('TN20 phát hành báo giá riêng, khách xác nhận trên cổng');
+
+Artisan::command('saas:order-paid {order} {reference} {amount}', function () {
+    $amount = filter_var($this->argument('amount'), FILTER_VALIDATE_INT);
+    if (! $amount || ! $this->confirm('Đã kiểm tra giao dịch thực nhận, số tiền và công ty cho đơn #'.$this->argument('order').'?')) {
+        return 1;
+    }
+    app(CommerceService::class)->confirmPayment((int) $this->argument('order'), $this->argument('reference'), $amount);
+    $this->info('Đã ghi nhận thanh toán và kích hoạt/gia hạn. Cấp phát chỉ chạy khi cấu hình cho phép.');
+})->purpose('Đối soát thủ công; không thực hiện chuyển tiền hoặc đánh dấu từ trình duyệt');
+
+Artisan::command('saas:ticket-reply {ticket} {message} {--close}', function () {
+    if (mb_strlen($this->argument('message')) < 5 || mb_strlen($this->argument('message')) > 6000) {
+        $this->error('Nội dung phản hồi từ 5 đến 6000 ký tự.');
+
+        return 1;
+    }
+    $ticket = SupportTicket::findOrFail($this->argument('ticket'));
+    $ticket->update(['reply' => $this->argument('message'), 'status' => $this->option('close') ? 'closed' : 'answered']);
+    AuditEvent::create(['tenant_id' => $ticket->tenant_id, 'action' => 'support.replied_by_console', 'subject' => (string) $ticket->id]);
+    $this->info('Đã lưu phản hồi trên cổng khách hàng.');
+})->purpose('TN20 phản hồi yêu cầu hỗ trợ trong ứng dụng; không tự gửi email');
