@@ -9,6 +9,8 @@ use App\Models\Operation;
 use App\Models\ServiceSubscription;
 use App\Models\Site;
 use App\Models\Tenant;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -16,13 +18,13 @@ use Illuminate\Validation\Rule;
 
 class TenantController extends Controller
 {
-    public function index(Request $request)
+    public function index(Request $request): Collection
     {
         return Tenant::query()->whereHas('members', fn ($q) => $q->where('users.id', $request->user()->id))
             ->orderBy('name')->get(['id', 'name', 'slug', 'status']);
     }
 
-    public function show(Request $request, Tenant $tenant)
+    public function show(Request $request, Tenant $tenant): JsonResponse
     {
         Gate::authorize('view', $tenant);
 
@@ -36,7 +38,7 @@ class TenantController extends Controller
         ]);
     }
 
-    public function storeSite(Request $request, Tenant $tenant)
+    public function storeSite(Request $request, Tenant $tenant): JsonResponse
     {
         Gate::authorize('manage', $tenant);
         $data = $request->validate([
@@ -54,7 +56,7 @@ class TenantController extends Controller
         return response()->json($site, 201);
     }
 
-    public function provision(Request $request, Tenant $tenant)
+    public function provision(Request $request, Tenant $tenant): JsonResponse
     {
         Gate::authorize('manage', $tenant);
         $data = $request->validate([
@@ -92,7 +94,7 @@ class TenantController extends Controller
         return response()->json($operation->fresh(), 202);
     }
 
-    public function operation(Tenant $tenant, string $operation)
+    public function operation(Tenant $tenant, string $operation): Operation
     {
         Gate::authorize('view', $tenant);
 

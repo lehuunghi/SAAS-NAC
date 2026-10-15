@@ -46,3 +46,33 @@ jobs:
       - run: npm ci && npm run build
       - run: pipx install ansible-core==2.19.3
       - run: ansible-playbook -i localhost, infrastructure/ansible/install-nac20.yml --syntax-check
+  containers:
+    needs: verify
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare isolated CI configuration
+        run: |
+          cp .env.example .env
+          printf '\nAPP_KEY=base64:%s\nDB_PASSWORD=ci-app-only\nMYSQL_ROOT_PASSWORD=ci-root-only\n' "$(openssl rand -base64 32)" >> .env
+      - run: docker compose config --quiet && docker compose build
+      - run: docker compose up -d mysql redis && docker compose run --rm app php artisan migrate --force
+      - run: docker compose up -d
+      - name: Verify HTTP page and compiled assets
+        run: |
+          curl --retry 15 --retry-all-errors --retry-delay 3 --fail http://127.0.0.1:8088/ -o /tmp/nac20.html
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          const html = fs.readFileSync('/tmp/nac20.html', 'utf8');
+          if (!html.includes('NAC20')) throw new Error('Missing NAC20 page');
+          const assets = [...html.matchAll(/(?:src|href)="([^\"]*\/build\/assets\/[^\"]+)"/g)];
+          if (assets.length < 2) throw new Error('Missing compiled assets');
+          for (const [, asset] of assets) {
+            const response = await fetch(new URL(asset).pathname.startsWith('/build/') ? 'http://127.0.0.1:8088' + new URL(asset).pathname : asset);
+            if (!response.ok || response.headers.get('content-type')?.includes('text/html')) throw new Error('Asset not served: ' + asset);
+          }
+          console.log('NAC20 HTTP and assets passed');
+          JS
+      - name: Stop CI stack
+        if: always()
+        run: docker compose down

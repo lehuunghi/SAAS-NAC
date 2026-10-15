@@ -2,13 +2,15 @@
 
 namespace App\Http\Controllers;
 
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
-    public function login(Request $request)
+    public function login(Request $request): JsonResponse
     {
         $credentials = $request->validate(['email' => 'required|email', 'password' => 'required|string']);
         if (! Auth::attempt($credentials)) {
@@ -19,7 +21,7 @@ class AuthController extends Controller
         return response()->json(['name' => $request->user()->name]);
     }
 
-    public function logout(Request $request)
+    public function logout(Request $request): Response
     {
         Auth::logout();
         $request->session()->invalidate();
