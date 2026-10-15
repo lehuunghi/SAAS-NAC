@@ -10,6 +10,13 @@ class AuthenticationTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_default_seeding_creates_no_login_accounts(): void
+    {
+        $this->seed();
+
+        $this->assertDatabaseCount('users', 0);
+    }
+
     public function test_login_logout_and_wrong_password(): void
     {
         $user = User::factory()->create(['password' => 'Test-only-Password-123']);

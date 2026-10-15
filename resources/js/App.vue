@@ -20,7 +20,7 @@ async function api(path, options = {}) {
     return body;
 }
 async function selectCompany(id) {
-    generation++; selected.value = id; data.value = null; error.value = ''; page.value = 'overview'; await refresh();
+    generation++; selected.value = id; data.value = null; error.value = ''; siteName.value = ''; siteCode.value = ''; page.value = 'overview'; await refresh();
 }
 async function refresh() {
     if (!selected.value) return;
