@@ -1,0 +1,14 @@
+#cloud-config
+# Runs on a fresh Debian 12 VM. No provider or DNS credentials are embedded.
+package_update: true
+packages:
+  - python3
+  - ca-certificates
+  - curl
+ssh_pwauth: false
+disable_root: false
+write_files:
+  - path: /etc/motd
+    permissions: '0644'
+    content: |
+      NAC20 - Cong Ty TNHH TN20 - May chu duoc quan ly rieng cho khach hang.

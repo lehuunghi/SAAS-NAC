@@ -1,0 +1,65 @@
+---
+- name: Install the verified NAC20 bundle on a dedicated machine
+  hosts: all
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Wait for SSH to become available
+      ansible.builtin.wait_for_connection:
+        timeout: 600
+    - name: Wait for cloud-init package operations to finish
+      ansible.builtin.command: cloud-init status --wait
+      changed_when: false
+    - name: Gather operating system facts
+      ansible.builtin.setup:
+    - name: Require a dedicated Debian 12 amd64 host and a pinned artifact
+      ansible.builtin.assert:
+        that:
+          - ansible_distribution == 'Debian'
+          - ansible_distribution_major_version == '12'
+          - ansible_architecture == 'x86_64'
+          - ansible_memtotal_mb >= 15000
+          - (ansible_mounts | selectattr('mount', 'equalto', '/') | first).size_total >= 200000000000
+          - nac_artifact_url is match('^https://github.com/lehuunghi/NAC/releases/download/[A-Za-z0-9._-]+/nac20-debian12-amd64-online.tar.gz$')
+          - nac_artifact_sha256 is match('^[a-f0-9]{64}$')
+    - name: Create restricted installation directory
+      ansible.builtin.file:
+        path: /opt/nac20-installer
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+    - name: Download exact release and verify SHA-256
+      ansible.builtin.get_url:
+        url: '{{ nac_artifact_url }}'
+        dest: /opt/nac20-installer/bundle.tar.gz
+        checksum: 'sha256:{{ nac_artifact_sha256 }}'
+        mode: '0600'
+    - name: Extract verified bundle
+      ansible.builtin.unarchive:
+        src: /opt/nac20-installer/bundle.tar.gz
+        dest: /opt/nac20-installer
+        remote_src: true
+    - name: Check the bundle
+      ansible.builtin.command:
+        argv: [bash, install.sh, server, --check]
+        chdir: /opt/nac20-installer/nac20-debian12-amd64-online
+      changed_when: false
+    - name: Install only on a fresh host
+      ansible.builtin.command:
+        argv: [bash, install.sh, server, --install]
+        chdir: /opt/nac20-installer/nac20-debian12-amd64-online
+        creates: /opt/nac20-installer/packages-installed
+      register: nac_install
+    - name: Record package installation completion
+      ansible.builtin.copy:
+        content: 'Packages installed; complete NAC20 configurator, TLS and network acceptance before handover.'
+        dest: /opt/nac20-installer/packages-installed
+        mode: '0600'
+    - name: Confirm packaged frontend exists
+      ansible.builtin.stat:
+        path: /usr/local/pf/html/pfappserver/root/dist/index.html
+      register: nac_frontend
+    - name: Verify frontend was installed
+      ansible.builtin.assert:
+        that: nac_frontend.stat.exists

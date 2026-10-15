@@ -1,0 +1,48 @@
+name: SAAS-NAC checks
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: saas_nac_test
+          MYSQL_ROOT_PASSWORD: ci-only-password
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -pci-only-password"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+      redis:
+        image: redis:7.4-alpine
+        ports: ['6379:6379']
+        options: --health-cmd="redis-cli ping" --health-interval=10s --health-timeout=5s --health-retries=5
+    env:
+      APP_ENV: testing
+      DB_CONNECTION: mysql
+      DB_DATABASE: saas_nac_test
+      DB_HOST: 127.0.0.1
+      DB_USERNAME: root
+      DB_PASSWORD: ci-only-password
+      REDIS_CLIENT: predis
+      SAAS_REDIS_TESTS: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: pdo_mysql, mbstring, intl
+          coverage: none
+      - run: composer install --no-interaction --prefer-dist
+      - run: cp .env.example .env && php artisan key:generate
+      - run: vendor/bin/pint --test
+      - run: php artisan test
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci && npm run build
+      - run: pipx install ansible-core==2.19.3
+      - run: ansible-playbook -i localhost, infrastructure/ansible/install-nac20.yml --syntax-check

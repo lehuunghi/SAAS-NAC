@@ -1,0 +1,70 @@
+services:
+  app:
+    build:
+      context: .
+      target: app
+    image: tn20/saas-nac:local
+    env_file: .env
+    environment: &app_environment
+      DB_HOST: mysql
+      REDIS_HOST: redis
+      APP_ENV: production
+      APP_DEBUG: 'false'
+      ANSIBLE_BINARY: /opt/ansible/bin/ansible-playbook
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+  web:
+    build:
+      context: .
+      target: web
+    ports: ['127.0.0.1:8088:80']
+    depends_on: [app]
+    restart: unless-stopped
+  worker:
+    image: tn20/saas-nac:local
+    env_file: .env
+    environment: *app_environment
+    command: ['php', 'artisan', 'queue:work', 'redis', '--queue=provisioning', '--tries=1', '--timeout=2400', '--sleep=3']
+    depends_on: [app]
+    restart: unless-stopped
+    # For live provisioning mount SSH key and trusted known_hosts read-only here;
+    # set the corresponding paths in .env. Web app does not need SSH credentials.
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:?Set DB_DATABASE}
+      MYSQL_USER: ${DB_USERNAME:?Set DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD}
+    command: ['--character-set-server=utf8mb4', '--collation-server=utf8mb4_unicode_ci', '--default-storage-engine=InnoDB']
+    volumes: ['mysql_data:/var/lib/mysql']
+    healthcheck:
+      test: ['CMD-SHELL', 'MYSQL_PWD="$$MYSQL_PASSWORD" mysqladmin ping -h 127.0.0.1 -u"$$MYSQL_USER" --silent']
+      interval: 10s
+      timeout: 5s
+      retries: 15
+    restart: unless-stopped
+  scheduler:
+    image: tn20/saas-nac:local
+    env_file: .env
+    environment: *app_environment
+    command: ['php', 'artisan', 'schedule:work']
+    depends_on: [app]
+    restart: unless-stopped
+  redis:
+    image: redis:7.4-alpine
+    command: ['redis-server', '--appendonly', 'yes', '--maxmemory-policy', 'noeviction']
+    volumes: ['redis_data:/data']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+volumes:
+  mysql_data:
+  redis_data:
