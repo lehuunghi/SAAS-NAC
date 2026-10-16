@@ -5,6 +5,7 @@ import CommercePanel from './CommercePanel.vue';
 import AdminPanel from './AdminPanel.vue';
 import AccountPanel from './AccountPanel.vue';
 import SecurityPanel from './SecurityPanel.vue';
+import NotificationsPanel from './NotificationsPanel.vue';
 
 const user = ref(null), companies = ref([]), selected = ref(''), data = ref(null);
 const page = ref('overview'), error = ref(''), busy = ref(false), loading = ref(true);
@@ -17,7 +18,7 @@ let timer, generation = 0;
 const labels = { requested: 'Đã yêu cầu', queued: 'Đang chờ', running: 'Đang thực hiện', provisioning: 'Đang cấp phát', simulated: 'Đã mô phỏng', completed: 'Hoàn tất tác vụ', failed: 'Cần xử lý', awaiting_configuration: 'Chờ cấu hình NAC20', ready: 'Đã được TN20 nghiệm thu / bàn giao' };
 const stateLabel = value => labels[value] || value;
 const env = computed(() => data.value?.environments?.[0]);
-const navigation = [ ['overview', '◈', 'Tổng quan'], ['quotes', '◇', 'Tư vấn & báo giá'], ['orders', '▧', 'Đơn hàng'], ['payments', '◉', 'Lịch sử thanh toán'], ['subscription', '▣', 'Dịch vụ của tôi'], ['sites', '▦', 'Chi nhánh'], ['infrastructure', '▤', 'Hạ tầng NAC20'], ['company', '▢', 'Hồ sơ công ty'], ['team', '♙', 'Thành viên'], ['security', '◇', 'Bảo mật tài khoản'], ['support', '◌', 'Hỗ trợ'], ['activity', '◷', 'Lịch sử hoạt động'] ];
+const navigation = [ ['overview', '◈', 'Tổng quan'], ['quotes', '◇', 'Tư vấn & báo giá'], ['orders', '▧', 'Đơn hàng'], ['payments', '◉', 'Lịch sử thanh toán'], ['subscription', '▣', 'Dịch vụ của tôi'], ['sites', '▦', 'Chi nhánh'], ['infrastructure', '▤', 'Hạ tầng NAC20'], ['company', '▢', 'Hồ sơ công ty'], ['team', '♙', 'Thành viên'], ['security', '◇', 'Bảo mật tài khoản'], ['notifications','◉','Thông báo'], ['support', '◌', 'Hỗ trợ'], ['activity', '◷', 'Lịch sử hoạt động'] ];
 async function api(path, options = {}) {
     const response = await fetch('/saas/api/v1/' + path, { credentials: 'same-origin', ...options,
         headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content, ...options.headers } });
@@ -77,7 +78,7 @@ onUnmounted(() => clearInterval(timer));
         <aside class="sidebar"><a href="/" class="brand">NAC<span>20</span><small>CLOUD</small></a><div class="company-picker"><label for="company">KHÔNG GIAN CÔNG TY</label><select id="company" :value="selected" @change="selectCompany(Number($event.target.value))"><option v-for="company in companies" :key="company.id" :value="company.id">{{ company.name }}</option></select></div><nav aria-label="Điều hướng chính"><button v-for="item in navigation" :key="item[0]" :class="{ active: page === item[0] }" @click="page = item[0]"><span>{{ item[1] }}</span>{{ item[2] }}</button></nav><div class="sidebar-bottom"><span class="dot"></span> Công Ty TNHH TN20<p>20.com.vn</p></div></aside>
         <div class="main-area"><header class="topbar"><span>Nền tảng dịch vụ <b>/ {{ navigation.find(n => n[0] === page)?.[2] }}</b></span><div><span class="avatar">{{ user.name.slice(0,1) }}</span><span>{{ user.name }}</span><button class="text-button" @click="logout">Đăng xuất</button></div></header>
             <main class="content"><p v-if="user.is_platform_admin" class="notice"><a href="/admin">↗ Chuyển sang quản trị nền tảng TN20</a></p><div class="page-heading"><div><p class="eyebrow">NAC20 · {{ data?.tenant?.slug || 'KHÔNG GIAN DOANH NGHIỆP' }}</p><h1>{{ navigation.find(n => n[0] === page)?.[2] }}</h1><p class="muted">{{ data?.tenant?.name || 'Chọn công ty để bắt đầu.' }}</p></div><button class="secondary" @click="refresh">↻ Cập nhật</button></div><p v-if="error" role="alert" class="error">{{ error }}</p><p v-if="!companies.length" class="panel">Tài khoản chưa được gán công ty. Liên hệ quản trị TN20 để cấp quyền.</p>
-                <SecurityPanel v-if="page === 'security'" :api="api" /><template v-if="data">
+                <NotificationsPanel v-if="page === 'notifications'" :api="api"/><SecurityPanel v-if="page === 'security'" :api="api" /><template v-if="data">
                     <CommercePanel v-if="['quotes','orders','payments','subscription','support'].includes(page)" :tenant-id="selected" :page="page" :can-manage="data.can_manage" :api="api" :key="selected" />
                     <AccountPanel v-if="['company','team'].includes(page)" :key="selected" :tenant="data.tenant" :user="user" :can-manage="data.can_manage" :page="page" :api="api" />
                     <template v-if="page === 'overview'">

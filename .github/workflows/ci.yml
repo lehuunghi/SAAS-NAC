@@ -46,6 +46,7 @@ jobs:
       - run: npm ci && npm run build
       - run: pipx install ansible-core==2.19.3
       - run: ansible-playbook -i localhost, infrastructure/ansible/install-nac20.yml --syntax-check
+      - run: ansible-playbook -i localhost, infrastructure/ansible/check-nac20-host.yml --syntax-check
       - run: SAAS_ANSIBLE_TESTS=true php artisan test --filter=test_real_ansible_preserves_password_as_literal_without_connecting_to_any_server
   containers:
     needs: verify

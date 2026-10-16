@@ -14,6 +14,9 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Services\CommerceService;
 use App\Services\DeploymentService;
+use App\Services\OperationLifecycle;
+use App\Services\Provisioning\AnsibleInstaller;
+use App\Services\Provisioning\SshProvisioner;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -154,6 +157,32 @@ class AdminController extends Controller
         return response()->json($operation->fresh(), 202);
     }
 
+    public function checkSsh(Request $request, Tenant $tenant): JsonResponse
+    {
+        $request->validate(['current_password' => ['required', 'string', 'current_password:web']]);
+        abort_unless(config('saas.provisioning_enabled') && config('saas.ssh_enabled') && $tenant->status === 'active', 409, 'Cần bật kiểm tra SSH trên hệ thống và chọn khách hàng đang hoạt động.');
+        abort_if(Environment::where('tenant_id', $tenant->id)->exists(), 409, 'Khách hàng đã có môi trường. Kiểm tra lại bằng quy trình vận hành của môi trường hiện tại.');
+        $target = SshProvisioner::validateTarget($request->only(['ssh_host', 'ssh_port', 'ssh_user', 'ssh_password', 'ssh_host_key']));
+        $candidate = new Environment([...$target, 'tenant_id' => $tenant->id, 'driver' => 'ssh', 'ip_address' => $target['ssh_host'], 'release_url' => config('saas.artifact_url'), 'release_sha256' => config('saas.artifact_sha256')]);
+        try {
+            app(AnsibleInstaller::class)->preflight($candidate);
+        } catch (\Throwable) {
+            return response()->json(['message' => 'Kiểm tra SSH chưa đạt. Kiểm tra IP/cổng, mật khẩu, host key, quyền root/sudo, Debian 12 và tài nguyên máy. Chưa tạo DNS hoặc cài gói.', 'code' => 'SSH_PREFLIGHT_FAILED'], 422);
+        }
+        $this->audit($request, 'installation.ssh_checked', $tenant->id, $tenant->id);
+
+        return response()->json(['message' => 'SSH, quyền root/sudo, hệ điều hành, RAM/đĩa và máy dành riêng đã đạt tại thời điểm kiểm tra. Chưa tạo DNS hoặc cài gói; worker sẽ kiểm tra lại trước khi cài.']);
+    }
+
+    public function cancel(Request $request, string $operation): JsonResponse
+    {
+        $request->validate(['confirmed' => 'required|accepted']);
+        $record = Operation::findOrFail($operation);
+        app(OperationLifecycle::class)->cancel($record, $request->user());
+
+        return response()->json($record->fresh());
+    }
+
     public function sshCredentials(Request $request, string $environment): JsonResponse
     {
         $data = $request->validate([
@@ -162,8 +191,10 @@ class AdminController extends Controller
             'ssh_password' => ['required_if:action,replace', 'nullable', 'string', 'max:1024', 'regex:/\A[^\x00\r\n]+\z/u'],
         ]);
         DB::transaction(function () use ($request, $environment, $data): void {
+            $tenantId = Environment::findOrFail($environment)->tenant_id;
+            Tenant::whereKey($tenantId)->lockForUpdate()->firstOrFail();
             $record = Environment::whereKey($environment)->lockForUpdate()->firstOrFail();
-            abort_unless($record->driver === 'ssh' && $record->status === 'failed', 409, 'Chỉ thay hoặc xóa mật khẩu của tác vụ SSH đã dừng do lỗi.');
+            abort_unless($record->driver === 'ssh' && in_array($record->status, ['failed', 'cancelled'], true), 409, 'Chỉ thay hoặc xóa mật khẩu của tác vụ SSH đã dừng do lỗi hoặc đã hủy.');
             $record->update(['ssh_password' => $data['action'] === 'replace' ? $data['ssh_password'] : null]);
             $this->audit($request, 'installation.ssh_credentials_'.$data['action'], $record->id, $record->tenant_id);
         });

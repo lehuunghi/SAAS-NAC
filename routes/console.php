@@ -2,7 +2,6 @@
 
 use App\Jobs\ProvisionEnvironment;
 use App\Models\AuditEvent;
-use App\Models\Environment;
 use App\Models\Operation;
 use App\Models\Order;
 use App\Models\QuoteRequest;
@@ -11,6 +10,8 @@ use App\Models\SupportTicket;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Services\CommerceService;
+use App\Services\DeploymentService;
+use App\Services\OperationLifecycle;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -80,20 +81,19 @@ Artisan::command('saas:activate {slug} {reference} {--days=30}', function () {
     $this->info('Đã kích hoạt thuê bao; khách hàng có thể yêu cầu cấp phát.');
 })->purpose('Xác nhận thuê bao thủ công sau đối soát; chưa phải webhook thanh toán');
 
-Artisan::command('saas:retry {operation}', function () {
+Artisan::command('saas:retry {operation} {--actor=}', function () {
     $operation = Operation::findOrFail($this->argument('operation'));
-    $environment = Environment::where('tenant_id', $operation->tenant_id)->findOrFail($operation->environment_id);
-    if ($operation->status !== 'failed' || ($environment->driver !== 'simulation' && ! $environment->server_id)) {
-        $this->error('Chỉ thử lại tác vụ lỗi đã xác định server_id. Nếu tạo máy bị timeout, đối soát nhà cung cấp trước.');
+    $actor = $this->option('actor') ? User::where('email', strtolower($this->option('actor')))->first() : User::find($operation->requested_by);
+    if (! $actor?->is_active || ! $actor->is_platform_admin) {
+        $this->error('Cần admin TN20 đang hoạt động. Chỉ định --actor=EMAIL_ADMIN tại console tin cậy.');
 
         return 1;
     }
     if (! $this->confirm('Đã kiểm tra tài nguyên, SSH host key và nguyên nhân lỗi?')) {
         return 1;
     }
-    $operation->update(['status' => 'queued', 'error_code' => null]);
-    AuditEvent::create(['tenant_id' => $operation->tenant_id, 'action' => 'operation.retry_by_console', 'subject' => (string) $operation->id]);
-    ProvisionEnvironment::dispatch($operation->id);
+    app(DeploymentService::class)->retry($operation, $actor);
+    AuditEvent::create(['tenant_id' => $operation->tenant_id, 'user_id' => $actor->id, 'action' => 'operation.retry_by_console', 'subject' => (string) $operation->id]);
     $this->info('Đã đưa lại vào hàng đợi.');
 })->purpose('Thử lại có đối soát, không tự tạo thêm máy khi kết quả API chưa rõ');
 
@@ -104,6 +104,11 @@ Artisan::command('saas:dispatch-pending', function () {
 })->purpose('Đưa tác vụ queued vào Redis nếu enqueue trước đó bị gián đoạn');
 
 Schedule::command('saas:dispatch-pending')->everyMinute()->withoutOverlapping();
+Artisan::command('saas:recover-stale', function () {
+    $count = app(OperationLifecycle::class)->recoverStale();
+    $this->info('Đã chuyển '.$count.' tác vụ quá hạn sang lỗi cần đối soát; không tự chạy lại.');
+})->purpose('Đối soát tác vụ running quá 50 phút khi khóa worker đã hết');
+Schedule::command('saas:recover-stale')->everyMinute()->withoutOverlapping();
 
 Artisan::command('saas:admin {email} {--revoke}', function () {
     $user = User::where('email', strtolower($this->argument('email')))->firstOrFail();

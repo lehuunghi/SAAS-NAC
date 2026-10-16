@@ -269,3 +269,31 @@ Tác vụ lỗi giữ mật khẩu dạng mã hóa để thử lại. Ở danh s
 Backend giữ duy nhất một môi trường SSH cho mỗi IP đích, đồng thời playbook ghi dấu gắn máy với môi trường SaaS tại `/opt/nac20-installer/saas-environment`. Máy đã gắn với môi trường khác hoặc có NAC từ trước mà chưa được quy trình này quản lý sẽ bị chặn. Không tự xóa dấu này để tái sử dụng máy; TN20 phải đối soát và chuẩn bị lại máy riêng trước.
 
 Luồng này chưa được nghiệm thu trên VPS thật trong quá trình phát triển: kiểm thử dùng HTTP/Ansible giả lập và CI kiểm tra cú pháp/image. Cần thử một máy Debian 12 riêng của TN20 trước khi bàn giao cho khách trả phí.
+
+## 14. Kiểm tra trước cài, hủy tác vụ, xử lý tác vụ treo và thông báo
+
+**Kiểm tra trước khi cài:** sau khi nhập thông tin SSH tại khu admin, bấm **Kiểm tra SSH trước khi cài**. Backend xác nhận mật khẩu admin, kết nối SSH với host key đã cung cấp, thử quyền root/sudo, kiểm tra Debian 12 amd64, RAM, dung lượng đĩa và việc máy đã gắn môi trường khác. Không cài Python/gói, không ghi dấu sở hữu máy và không tạo DNS trong bước này. Mật khẩu kiểm tra không được lưu DB. Kiểm tra tối đa 45 giây; nếu không đạt, giao diện chỉ trả thông báo an toàn, không trả nội dung stdout/stderr có thể chứa bí mật.
+
+Kết quả kiểm tra chỉ có giá trị tại thời điểm thực hiện. Khi nhập khác thông tin máy, giao diện bỏ kết quả cũ. Worker luôn kiểm tra lại trước DNS, kể cả admin không bấm kiểm tra riêng. Nếu không đạt, tác vụ chuyển lỗi `SSH_PREFLIGHT_FAILED`, giữ mật khẩu mã hóa cho quy trình sửa/thử lại; chưa gọi DNS hoặc bước cài gói. Lỗi này chưa tự phân loại chính xác thành sai mật khẩu, thiếu sudo hay thiếu tài nguyên; TN20 kiểm tra các điều kiện nêu trên tại console tin cậy.
+
+**Hủy tác vụ chờ:** trong danh sách tác vụ chọn **Hủy tác vụ chờ**, kiểm tra đúng khách hàng rồi xác nhận. Backend khóa trạng thái để phân định với worker: nếu worker đã nhận việc, yêu cầu hủy bị từ chối. Hủy xóa mật khẩu SSH trong DB và đánh dấu tác vụ/môi trường đã hủy. Không xóa VM, DNS hoặc hoàn tác phần cài từ lần chạy trước. Không có chức năng dừng cưỡng bức tác vụ đang chạy trên giao diện.
+
+**Khởi động lại sau hủy/lỗi:** đối soát máy và nguyên nhân trước; với SSH đã xóa mật khẩu, dùng **Thay / xóa mật khẩu SSH** để nhập lại. Sau đó chọn **Thử lại / Khởi động lại** và xác nhận. Backend kiểm tra lại thuê bao, khách hàng, quyền admin và công tắc triển khai trước khi xếp hàng. Mỗi lần chạy có số lần riêng; job và callback của lần cũ không được cập nhật kết quả của lần mới. Không dùng luồng này để tự cài lại máy đã bàn giao hoặc chuyển môi trường giữa các khách hàng.
+
+Lệnh console dùng cùng dịch vụ thử lại với API. Nếu người yêu cầu cũ chưa phải admin TN20 đang hoạt động, chỉ định admin chịu trách nhiệm tại console tin cậy:
+
+```bash
+docker compose exec app php artisan saas:retry ID_TAC_VU --actor=EMAIL_ADMIN_TN20
+```
+
+**Tác vụ treo:** giữ scheduler và Redis hoạt động. Mỗi phút scheduler đối soát các tác vụ running đã quá 50 phút tính từ lúc nhận việc (tác vụ cũ thiếu thời điểm bắt đầu dùng thời gian cập nhật), và chỉ xử lý khi lấy được khóa worker của công ty. Tác vụ được chuyển lỗi `WORKER_STALE`, môi trường lỗi và phát thông báo. Không tự đưa lại vào hàng đợi hoặc tạo lại VM. Đây là đối soát quá hạn, không chứng minh tiến trình từ xa đã dừng; TN20 cần kiểm tra máy trước khi thử lại.
+
+```bash
+docker compose exec app php artisan saas:recover-stale
+```
+
+Worker timeout bình thường có thể ghi `WORKER_INTERRUPTED` sớm hơn. Các mốc hiện tại: job tối đa 2400 giây, khóa công ty 2500 giây, Redis retry_after 2700 giây, đối soát quá hạn 3000 giây. Không giảm các mốc tùy ý hoặc cấu hình retry_after ngắn hơn thời gian chạy job.
+
+**Thông báo:** admin TN20 và thành viên đang hoạt động của công ty nhận thông báo hoàn tất, lỗi hoặc hủy trong mục **Thông báo**. Mỗi người đánh dấu đã đọc riêng; nội dung không chứa mật khẩu hoặc stdout/stderr. Mất quyền công ty hoặc quyền admin thì không còn xem được thông báo vượt quyền, kể cả thông báo đã phát trước đó. Chỉ phát cho các kết quả mới sau khi nâng cấp, chưa nhập lại lịch sử cũ, chưa gửi email/SMS.
+
+Khi nâng cấp, chạy migration mới và khởi động lại worker/scheduler/app để dùng mã và schema đồng nhất. Job Redis cũ không mang số lần chạy được coi là lần đầu; các lần thử lại sau nâng cấp có số lần riêng. Tiếp tục giữ chế độ mô phỏng đến khi TN20 nghiệm thu VPS thật.

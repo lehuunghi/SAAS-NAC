@@ -203,6 +203,9 @@ class SshInstallationTest extends TestCase
         $inventoryFile = null;
         Process::fake(function ($process) use (&$inventoryFile) {
             $inventoryFile = $process->command[2];
+            if (str_ends_with($process->command[3], 'check-nac20-host.yml')) {
+                return Process::result();
+            }
 
             return Process::result(errorOutput: 'Sensitive process output '.self::SSH_PASSWORD, exitCode: 1);
         });

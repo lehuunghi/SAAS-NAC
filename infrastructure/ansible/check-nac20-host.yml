@@ -1,0 +1,25 @@
+---
+- name: Check dedicated NAC20 server without changing it
+  hosts: all
+  gather_facts: false
+  become: true
+  no_log: true
+  vars:
+    ansible_connect_timeout: 10
+    ansible_ssh_retries: 0
+  tasks:
+    - name: Verify SSH, sudo, Debian, resources and existing ownership without writing files
+      ansible.builtin.raw: |
+        set -eu
+        test "$(id -u)" = 0
+        . /etc/os-release
+        test "$ID" = debian && test "$VERSION_ID" = 12 && test "$(uname -m)" = x86_64
+        awk '/MemTotal:/ {exit ($2 >= 15360000 ? 0 : 1)}' /proc/meminfo
+        df -Pk / | awk 'NR == 2 {exit ($2 >= 195312500 ? 0 : 1)}'
+        binding=/opt/nac20-installer/saas-environment
+        if test -f "$binding"; then
+          test "$(cat "$binding")" = '{{ nac_deployment_id }}'
+        else
+          test ! -e /usr/local/pf
+        fi
+      changed_when: false

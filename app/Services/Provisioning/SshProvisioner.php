@@ -53,6 +53,8 @@ class SshProvisioner implements Provisioner
         $progress('checking_ssh_target');
         self::assertTarget($environment);
         app(AnsibleInstaller::class)->checkConfiguration($environment);
+        $progress('checking_ssh_connection');
+        app(AnsibleInstaller::class)->preflight($environment);
         $progress('configuring_dns');
         app(DnsManager::class)->configure($environment);
         $progress('installing_packages');

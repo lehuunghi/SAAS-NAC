@@ -54,13 +54,22 @@ class DeploymentService
     {
         abort_unless($actor->is_active && $actor->is_platform_admin, 403);
         DB::transaction(function () use ($operation, $actor) {
-            Tenant::whereKey($operation->tenant_id)->lockForUpdate()->firstOrFail();
+            $tenant = Tenant::whereKey($operation->tenant_id)->lockForUpdate()->firstOrFail();
             $operation->refresh();
             $environment = Environment::where('tenant_id', $operation->tenant_id)->findOrFail($operation->environment_id);
-            abort_unless($operation->status === 'failed' && $environment->status === 'failed', 409, 'Chỉ thử lại tác vụ lỗi.');
-            abort_unless($environment->driver === 'simulation' || $environment->server_id, 409, 'Phải đối soát máy chủ trước khi thử lại.');
+            abort_unless(in_array($operation->status, ['failed', 'cancelled'], true) && in_array($environment->status, ['failed', 'cancelled'], true), 409, 'Chỉ thử lại tác vụ lỗi hoặc đã hủy.');
+            abort_unless($tenant->status === 'active', 409, 'Khách hàng đang tạm ngưng.');
+            $neverStarted = $operation->status === 'cancelled' && ! $operation->started_at;
+            abort_unless($environment->driver === 'simulation' || $environment->server_id || $neverStarted, 409, 'Phải đối soát máy chủ trước khi thử lại.');
+            if ($environment->driver !== 'simulation') {
+                abort_unless(config('saas.provisioning_enabled'), 409, 'Chưa bật triển khai thực tế.');
+                abort_unless(ServiceSubscription::where('tenant_id', $tenant->id)->where('status', 'active')->where('expires_at', '>', now())->exists(), 409, 'Thuê bao chưa có hiệu lực.');
+            }
+            if ($environment->driver === 'ssh') {
+                abort_unless(config('saas.ssh_enabled') && $environment->ssh_password, 409, 'Cần bật cài SSH và nhập lại mật khẩu máy chủ trước khi thử lại.');
+            }
             $environment->update(['status' => 'queued']);
-            $operation->update(['status' => 'queued', 'error_code' => null, 'requested_by' => $actor->id]);
+            $operation->update(['status' => 'queued', 'stage' => 'requested', 'error_code' => null, 'requested_by' => $actor->id, 'attempt' => $operation->attempt + 1, 'started_at' => null, 'finished_at' => null]);
             ProvisionEnvironment::dispatch($operation->id)->afterCommit();
         });
     }

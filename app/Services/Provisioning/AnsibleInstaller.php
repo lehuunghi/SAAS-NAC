@@ -22,6 +22,16 @@ class AnsibleInstaller
 
     public function install(Environment $environment): void
     {
+        $this->run($environment, 'install-nac20.yml', 2100, 'ANSIBLE_FAILED');
+    }
+
+    public function preflight(Environment $environment): void
+    {
+        $this->run($environment, 'check-nac20-host.yml', 45, 'SSH_PREFLIGHT_FAILED');
+    }
+
+    private function run(Environment $environment, string $playbook, int $timeout, string $error): void
+    {
         $this->checkConfiguration($environment);
         $directory = is_dir('/dev/shm') && is_writable('/dev/shm') ? '/dev/shm/nac20-provisioning' : storage_path('app/private/provisioning');
         if (! is_dir($directory) && ! mkdir($directory, 0700, true) && ! is_dir($directory)) {
@@ -70,10 +80,14 @@ class AnsibleInstaller
                 $content .= '      '.$key.': '.$tag.json_encode($value, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n";
             }
             file_put_contents($inventory, $content);
-            $result = Process::timeout(2100)->env(['ANSIBLE_HOST_KEY_CHECKING' => 'True', 'ANSIBLE_NO_LOG' => 'True'])
-                ->run([config('saas.ansible_binary'), '-i', $inventory, base_path('infrastructure/ansible/install-nac20.yml')]);
+            try {
+                $result = Process::timeout($timeout)->env(['ANSIBLE_HOST_KEY_CHECKING' => 'True', 'ANSIBLE_NO_LOG' => 'True'])
+                    ->run([config('saas.ansible_binary'), '-i', $inventory, base_path('infrastructure/ansible/'.$playbook)]);
+            } catch (\Throwable) {
+                throw new RuntimeException($error);
+            }
             if (! $result->successful()) {
-                throw new RuntimeException('ANSIBLE_FAILED');
+                throw new RuntimeException($error);
             }
         } finally {
             foreach ($files as $file) {
