@@ -16,8 +16,9 @@ Route::prefix('saas/api/v1')->group(function () {
     Route::get('catalog', [CommerceController::class, 'catalog']);
     Route::post('register', [CommerceController::class, 'register'])->middleware('throttle:registration');
     Route::post('login', [AuthController::class, 'login'])->middleware('throttle:login');
-    Route::middleware(['auth', EnsureAccountActive::class])->group(function () {
+    Route::middleware(['auth', EnsureAccountActive::class, 'auth.session'])->group(function () {
         Route::post('logout', [AuthController::class, 'logout']);
+        Route::post('password', [AuthController::class, 'password'])->middleware('throttle:account-security');
         Route::get('me', fn () => ['id' => auth()->id(), 'name' => auth()->user()->name, 'email' => auth()->user()->email, 'is_platform_admin' => auth()->user()->is_platform_admin]);
         Route::post('profile', [AccountController::class, 'profile']);
         Route::get('tenants/{tenant}/team', [AccountController::class, 'team']);

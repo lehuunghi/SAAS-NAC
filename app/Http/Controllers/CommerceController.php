@@ -45,6 +45,7 @@ class CommerceController extends Controller
         });
         Auth::login($user);
         $request->session()->regenerate();
+        $request->session()->put('password_hash_web', Auth::guard('web')->hashPasswordForCookie($user->getAuthPassword()));
 
         return response()->json(['name' => $user->name], 201);
     }

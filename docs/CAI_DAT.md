@@ -213,3 +213,9 @@ Chạy tại console TN20 và xác nhận đúng email. Dùng `--revoke` để t
 **Khách hàng đăng nhập tại `/`:** báo giá, đơn, thanh toán, thời hạn, chi nhánh, hạ tầng, hỗ trợ, hồ sơ công ty và thành viên. Owner/admin xem thông tin tài chính; operator/viewer chỉ có quyền đọc phần được phép. Chủ công ty mới được cấp/thu hồi quyền thành viên, phải nhập mật khẩu hiện tại. Thành viên được thêm cần có tài khoản đã đăng ký; đây là gán quyền cho tài khoản hiện hữu, chưa phải lời mời qua email. Không đổi/xóa vai trò owner từ màn hình thành viên.
 
 Cấu hình API hạ tầng, DNS, SSH và chứng thư vẫn do TN20 chuẩn bị như bước 6–8. Màn hình admin không tự cấp token nhà cung cấp, bỏ kiểm tra SSH host key hoặc hoàn tất trình cấu hình NAC chưa được tự động hóa. Bản pilot vẫn cần MFA/xác minh email, cổng thanh toán tự động và nghiệm thu hạ tầng trước khi vận hành công khai.
+
+**Đổi mật khẩu:** vào **Bảo mật tài khoản** ở khu khách hàng hoặc admin TN20. Nhập mật khẩu hiện tại và mật khẩu mới ít nhất 12 ký tự, xác nhận lại rồi lưu. Phiên đang dùng được thay mã phiên/CSRF; các phiên đã ghi nhận mật khẩu cũ phải đăng nhập lại ở yêu cầu tiếp theo. Mỗi tài khoản tối đa 5 lần thử đổi trong một phút. Chức năng này không cấp quyền đổi mật khẩu người khác và chưa phải khôi phục mật khẩu qua email.
+
+Danh sách môi trường/tác vụ trong **Cài đặt cho khách** tự tải lại mỗi 10 giây khi tab hiển thị; tạm dừng khi đang xử lý, có lỗi hoặc mở phần thử lại/nghiệm thu. Nút **Cập nhật** tải lại thủ công. Tự tải danh sách không gửi lại yêu cầu cài đặt, không tạo VM hoặc xác nhận bàn giao.
+
+Khi nâng cấp từ bản chưa có kiểm tra mật khẩu theo phiên, TN20 cần kết thúc các phiên cũ trong kho session trước khi mở lại dịch vụ; phiên cũ chưa từng qua middleware mới chưa có dấu kiểm tra mật khẩu. Thực hiện trong thời gian bảo trì, theo đúng session driver đang dùng, không xóa dữ liệu nghiệp vụ hoặc dùng lệnh xóa toàn bộ Redis dùng chung. Bản mới ghi dấu này ngay khi đăng ký/đăng nhập.

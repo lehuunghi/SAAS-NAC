@@ -65,6 +65,8 @@ Thay email thực tế; lệnh yêu cầu xác nhận. `--revoke` thu hồi quy�
 
 ## Kiểm tra
 
+Cả hai khu quản trị có mục **Bảo mật tài khoản** để đổi mật khẩu (tối thiểu 12 ký tự, xác nhận mật khẩu hiện tại). Các phiên đã đăng nhập với mật khẩu cũ bị từ chối ở yêu cầu kế tiếp; phiên đang đổi được giữ lại và thay mã phiên/CSRF. Admin đổi mật khẩu được ghi vào nhật ký, không lưu mật khẩu trong nhật ký. Khôi phục qua email và MFA chưa được cung cấp.
+
 ```bash
 composer install
 npm ci

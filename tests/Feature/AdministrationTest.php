@@ -142,7 +142,7 @@ class AdministrationTest extends TestCase
         $this->postJson($url, $body)->assertOk();
         $this->postJson($url, [...$body, 'email' => $owner->email])->assertConflict();
         $this->assertFalse($other->fresh()->is_platform_admin);
-        $this->actingAs($other)->postJson($url, $body)->assertForbidden();
+        $this->withSession(['password_hash_web' => $other->password])->actingAs($other)->postJson($url, $body)->assertForbidden();
         $this->getJson('/saas/api/v1/admin/overview')->assertForbidden();
     }
 
