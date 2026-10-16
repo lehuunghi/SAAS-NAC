@@ -219,3 +219,53 @@ Cấu hình API hạ tầng, DNS, SSH và chứng thư vẫn do TN20 chuẩn b�
 Danh sách môi trường/tác vụ trong **Cài đặt cho khách** tự tải lại mỗi 10 giây khi tab hiển thị; tạm dừng khi đang xử lý, có lỗi hoặc mở phần thử lại/nghiệm thu. Nút **Cập nhật** tải lại thủ công. Tự tải danh sách không gửi lại yêu cầu cài đặt, không tạo VM hoặc xác nhận bàn giao.
 
 Khi nâng cấp từ bản chưa có kiểm tra mật khẩu theo phiên, TN20 cần kết thúc các phiên cũ trong kho session trước khi mở lại dịch vụ; phiên cũ chưa từng qua middleware mới chưa có dấu kiểm tra mật khẩu. Thực hiện trong thời gian bảo trì, theo đúng session driver đang dùng, không xóa dữ liệu nghiệp vụ hoặc dùng lệnh xóa toàn bộ Redis dùng chung. Bản mới ghi dấu này ngay khi đăng ký/đăng nhập.
+
+## 13. Admin tạo khách hàng và cài NAC20 qua mật khẩu SSH
+
+Luồng này dùng **máy chủ đã có**, không gọi API tạo VM Hetzner. Mỗi khách hàng một máy riêng. Bản hiện tại nhận IPv4 công khai; không nhận hostname, IP nội bộ, lệnh shell hoặc tùy chọn SSH tùy ý từ form.
+
+### Chuẩn bị một lần trên SaaS
+
+1. Dùng cổng HTTPS, `APP_DEBUG=false`, `APP_KEY` ổn định và lưu bản sao khóa tại nơi quản trị an toàn. Mật khẩu SSH được mã hóa bằng khóa ứng dụng; thay/mất khóa sẽ ảnh hưởng việc giải mã các tác vụ đang chờ và sao lưu DB còn giữ mật khẩu mã hóa.
+2. Cấu hình Redis worker, scheduler, URL/SHA-256 bộ cài như các bước trên. Image app mới có Ansible và `sshpass`; cần dựng lại image khi nâng cấp.
+3. Khai báo `NAC_DOMAIN`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID` của vùng DNS TN20. Luồng SSH cũng tự tạo bản ghi A dạng DNS-only; không ghi đè bản ghi xung đột. Không cần token Hetzner, khóa SSH riêng hoặc file known_hosts chung cho luồng mật khẩu này.
+4. Đặt `PROVISIONING_ENABLED=true`, `SSH_INSTALL_ENABLED=true`. Giữ `PROVISIONING_DRIVER=simulation` hoặc `hetzner` cho luồng tự cấp máy khác; không đặt mặc định `ssh`, vì thông tin máy có sẵn chỉ do admin nhập cho từng khách.
+5. Cập nhật và khởi động lại:
+
+```bash
+docker compose build
+docker compose run --rm app php artisan migrate --force
+docker compose up -d --force-recreate
+```
+
+### Chuẩn bị máy đích
+
+- Debian 12 amd64 riêng, tối thiểu 16 GB RAM và 200 GB đĩa gốc. Chưa cài NAC/PacketFence khác. Không dùng máy đang chạy ứng dụng khách cần giữ.
+- SSH cho phép xác thực mật khẩu; tài khoản `root` hoặc có quyền sudo. Bản này dùng cùng mật khẩu cho SSH và sudo; tài khoản có mật khẩu sudo khác cần điều chỉnh ở vận hành trước.
+- Worker SaaS truy cập được cổng SSH máy đích; máy đích truy cập được kho gói và bộ cài. Giới hạn firewall SSH theo IP worker của TN20.
+- Tại console tin cậy của VPS/nhà cung cấp, lấy **khóa công khai máy chủ**, không lấy private key:
+
+```bash
+cat /etc/ssh/ssh_host_ed25519_key.pub
+```
+
+Sao chép dòng `ssh-ed25519 AAAA...`, có thể kèm chú thích cuối dòng. Đây là danh tính máy chủ để SSH kiểm tra trước khi gửi mật khẩu. Nếu máy được cài lại hoặc khóa thay đổi, TN20 cần đối soát; hệ thống không tự bỏ kiểm tra host key.
+
+### Thao tác tại khu admin
+
+1. Đăng nhập `/admin` → **Khách hàng → Thêm khách hàng**. Nhập tên, mã công ty và email chủ tài khoản. Nếu chưa có tài khoản, bật **Tạo tài khoản mới cho chủ công ty**, nhập họ tên/mật khẩu ban đầu, nhập lại mật khẩu và xác nhận mật khẩu admin hiện tại. Tài khoản mới chỉ là khách hàng, không được cấp quyền admin TN20. Hệ thống chưa tự gửi email; TN20 bàn giao qua kênh riêng.
+2. Kích hoạt thuê bao bằng quy trình báo giá/đối soát hợp lệ ở phần 10. Trong form đối soát bật **Để admin chọn máy và cài SSH sau đối soát**. Thuê bao được kích hoạt, chưa tạo môi trường; tránh tạo nhầm môi trường mô phỏng trước khi admin chọn máy. Không dùng xác nhận thanh toán giả để bỏ điều kiện thuê bao.
+3. Vào **Cài đặt cho khách**, chọn đúng công ty → **Máy chủ có sẵn — SSH bằng mật khẩu**.
+4. Điền IPv4, cổng (thường 22), tài khoản, mật khẩu SSH, khóa công khai Ed25519 từ console máy chủ và mật khẩu admin TN20 hiện tại. Đánh dấu xác nhận máy riêng/được phép cài và xác nhận đúng khách hàng.
+5. Bấm **Tạo tác vụ cài đặt NAC20**. Trình duyệt chỉ gửi tác vụ một lần; worker kiểm tra quyền admin/thuê bao/công tắc triển khai, tạo DNS, chuẩn bị Python nếu thiếu, kiểm tra Debian/tài nguyên, tải đúng bộ cài và SHA-256 rồi cài qua Ansible. Trang cập nhật danh sách định kỳ, không cần giữ trình duyệt mở để worker chạy.
+6. Khi trạng thái **Chờ cấu hình / nghiệm thu**, mật khẩu SSH đã được xóa khỏi DB. TN20 hoàn tất trình cấu hình NAC20, TLS, Connector và kiểm tra RADIUS/MAB thực tế, rồi nghiệm thu/bàn giao theo phần 12. Chỉ cài xong gói chưa đồng nghĩa mạng đã được kiểm soát hoàn chỉnh.
+
+### Khi có lỗi
+
+Mật khẩu không được trả lại qua API, không nằm trong tham số dòng lệnh hoặc nhật ký nghiệp vụ. Inventory tạm có quyền `0600`, thư mục `0700`, ưu tiên RAM `/dev/shm` trên Linux và xóa khi tiến trình kết thúc bình thường; playbook tắt ghi nội dung tác vụ nhạy cảm. Nếu worker bị kill cứng, vận hành cần dọn inventory tạm sau khi chắc chắn không còn tác vụ chạy; không sao lưu các file này.
+
+Tác vụ lỗi giữ mật khẩu dạng mã hóa để thử lại. Ở danh sách môi trường, chọn **Thay / xóa mật khẩu SSH**, xác nhận mật khẩu admin, thay mật khẩu đúng hoặc xóa bản đã lưu. Thao tác này không tự chạy lại. Sau khi xử lý nguyên nhân, dùng **Thử lại** và xác nhận đã đối soát. Xóa mật khẩu thì cần nhập lại trước khi thử cài. Môi trường SSH đã thành công không giữ mật khẩu để tiếp tục quản trị máy; dùng quy trình vận hành riêng.
+
+Backend giữ duy nhất một môi trường SSH cho mỗi IP đích, đồng thời playbook ghi dấu gắn máy với môi trường SaaS tại `/opt/nac20-installer/saas-environment`. Máy đã gắn với môi trường khác hoặc có NAC từ trước mà chưa được quy trình này quản lý sẽ bị chặn. Không tự xóa dấu này để tái sử dụng máy; TN20 phải đối soát và chuẩn bị lại máy riêng trước.
+
+Luồng này chưa được nghiệm thu trên VPS thật trong quá trình phát triển: kiểm thử dùng HTTP/Ansible giả lập và CI kiểm tra cú pháp/image. Cần thử một máy Debian 12 riêng của TN20 trước khi bàn giao cho khách trả phí.

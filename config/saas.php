@@ -4,6 +4,7 @@ return [
     'domain' => env('NAC_DOMAIN', 'nac.20.com.vn'),
     'driver' => env('PROVISIONING_DRIVER', 'simulation'),
     'provisioning_enabled' => env('PROVISIONING_ENABLED', false),
+    'ssh_enabled' => env('SSH_INSTALL_ENABLED', false),
     'artifact_url' => env('NAC_ARTIFACT_URL'),
     'artifact_sha256' => env('NAC_ARTIFACT_SHA256'),
     'ansible_binary' => env('ANSIBLE_BINARY', '/usr/bin/ansible-playbook'),

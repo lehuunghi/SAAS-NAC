@@ -7,7 +7,7 @@ COPY resources ./resources
 RUN npm run build
 
 FROM php:8.4-fpm-bookworm AS app
-RUN apt-get update && apt-get install -y --no-install-recommends libicu-dev libonig-dev libzip-dev unzip git openssh-client python3 python3-venv \
+RUN apt-get update && apt-get install -y --no-install-recommends libicu-dev libonig-dev libzip-dev unzip git openssh-client sshpass python3 python3-venv \
     && docker-php-ext-install pdo_mysql mbstring intl zip pcntl opcache \
     && python3 -m venv /opt/ansible \
     && /opt/ansible/bin/pip install --no-cache-dir ansible-core==2.19.3 \

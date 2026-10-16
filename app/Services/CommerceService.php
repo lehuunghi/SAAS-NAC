@@ -40,12 +40,12 @@ class CommerceService
         });
     }
 
-    public function confirmPayment(int $orderId, string $reference, int $receivedAmount, ?int $actorId = null): Order
+    public function confirmPayment(int $orderId, string $reference, int $receivedAmount, ?int $actorId = null, bool $deferInstallation = false): Order
     {
         abort_unless(preg_match('/\A[A-Za-z0-9._:-]{4,120}\z/', $reference), 422, 'Tham chiếu giao dịch không hợp lệ.');
         $initial = Order::findOrFail($orderId);
 
-        return DB::transaction(function () use ($initial, $reference, $receivedAmount, $actorId) {
+        return DB::transaction(function () use ($initial, $reference, $receivedAmount, $actorId, $deferInstallation) {
             $tenant = Tenant::whereKey($initial->tenant_id)->lockForUpdate()->firstOrFail();
             $order = Order::where('tenant_id', $tenant->id)->lockForUpdate()->findOrFail($initial->id);
             if ($order->status === 'paid') {
@@ -65,7 +65,7 @@ class CommerceService
             ]);
             $order->update(['status' => 'paid', 'paid_at' => now()]);
             $this->audit($tenant->id, $actorId ? 'payment.verified_by_admin' : 'payment.verified_by_console', $order->id, $actorId);
-            if (! Environment::where('tenant_id', $tenant->id)->exists() && (config('saas.driver') === 'simulation' || config('saas.provisioning_enabled'))) {
+            if (! $deferInstallation && in_array(config('saas.driver'), ['simulation', 'hetzner'], true) && ! Environment::where('tenant_id', $tenant->id)->exists() && (config('saas.driver') === 'simulation' || config('saas.provisioning_enabled'))) {
                 $owner = $tenant->members()->wherePivot('role', 'owner')->first();
                 if ($owner) {
                     $environment = Environment::create(['tenant_id' => $tenant->id, 'hostname' => $tenant->slug.'.'.config('saas.domain'), 'driver' => config('saas.driver')]);

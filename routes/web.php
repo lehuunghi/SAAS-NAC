@@ -49,6 +49,7 @@ Route::prefix('saas/api/v1')->group(function () {
             Route::get('installations', [AdminController::class, 'installations']);
             Route::post('operations/{operation}/retry', [AdminController::class, 'retry']);
             Route::post('environments/{environment}/handover', [AdminController::class, 'handover']);
+            Route::post('environments/{environment}/ssh-credentials', [AdminController::class, 'sshCredentials'])->middleware('throttle:account-security');
             Route::get('users', [AdminController::class, 'users']);
             Route::post('users/{user}', [AdminController::class, 'updateUser']);
             Route::get('tickets', [AdminController::class, 'tickets']);

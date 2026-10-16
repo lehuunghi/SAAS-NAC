@@ -4,7 +4,6 @@ namespace App\Services\Provisioning;
 
 use App\Models\Environment;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Process;
 use RuntimeException;
 
 class HetznerProvisioner implements Provisioner
@@ -43,9 +42,9 @@ class HetznerProvisioner implements Provisioner
         }
         $environment->update(['ip_address' => $ip]);
         $progress('configuring_dns');
-        $this->dns($environment);
+        app(DnsManager::class)->configure($environment);
         $progress('installing_packages');
-        $this->ansible($environment);
+        app(AnsibleInstaller::class)->install($environment);
         // The released installer requires its initial configurator: never call this production-ready.
         $environment->update(['status' => 'awaiting_configuration']);
         $progress('awaiting_configuration');
@@ -63,55 +62,6 @@ class HetznerProvisioner implements Provisioner
             || ! is_file(config('saas.ssh_key')) || ! is_file(config('saas.known_hosts'))
             || ! is_file(config('saas.ansible_binary'))) {
             throw new RuntimeException('INVALID_CONFIGURATION');
-        }
-    }
-
-    private function dns(Environment $environment): void
-    {
-        if (! preg_match('/\A[a-z0-9-]+(?:\.[a-z0-9-]+)+\z/', $environment->hostname)) {
-            throw new RuntimeException('INVALID_HOSTNAME');
-        }
-        $zone = config('saas.cloudflare.zone_id');
-        if (! preg_match('/\A[a-f0-9]{32}\z/', $zone)) {
-            throw new RuntimeException('INVALID_ZONE');
-        }
-        $http = Http::baseUrl('https://api.cloudflare.com/client/v4/zones/'.$zone)
-            ->withToken(config('saas.cloudflare.token'))->timeout(30)->connectTimeout(10);
-        $records = $http->get('/dns_records', ['name' => $environment->hostname])->throw()->json('result');
-        if (count($records) > 0) {
-            if (count($records) !== 1 || $records[0]['type'] !== 'A' || $records[0]['content'] !== $environment->ip_address || $records[0]['proxied']) {
-                throw new RuntimeException('DNS_CONFLICT');
-            }
-
-            return;
-        }
-        $http->post('/dns_records', ['type' => 'A', 'name' => $environment->hostname, 'content' => $environment->ip_address, 'ttl' => 300, 'proxied' => false])->throw();
-    }
-
-    private function ansible(Environment $environment): void
-    {
-        $directory = storage_path('app/private/provisioning');
-        if (! is_dir($directory)) {
-            mkdir($directory, 0700, true);
-        }
-        $file = tempnam($directory, 'inventory-');
-        chmod($file, 0600);
-        file_put_contents($file, json_encode(['all' => ['hosts' => ['nac20' => [
-            'ansible_host' => $environment->ip_address,
-            'ansible_user' => 'root',
-            'ansible_ssh_private_key_file' => config('saas.ssh_key'),
-            'ansible_ssh_common_args' => '-o StrictHostKeyChecking=yes -o UserKnownHostsFile='.escapeshellarg(config('saas.known_hosts')),
-            'nac_artifact_url' => $environment->release_url ?? config('saas.artifact_url'),
-            'nac_artifact_sha256' => $environment->release_sha256 ?? config('saas.artifact_sha256'),
-        ]]]], JSON_THROW_ON_ERROR));
-        try {
-            $result = Process::timeout(2100)->env(['ANSIBLE_HOST_KEY_CHECKING' => 'True'])
-                ->run([config('saas.ansible_binary'), '-i', $file, base_path('infrastructure/ansible/install-nac20.yml')]);
-            if (! $result->successful()) {
-                throw new RuntimeException('ANSIBLE_FAILED');
-            }
-        } finally {
-            unlink($file);
         }
     }
 }

@@ -58,9 +58,21 @@ class AdminController extends Controller
 
     public function createCustomer(Request $request): JsonResponse
     {
-        $data = $request->validate(['name' => 'required|string|max:150', 'slug' => 'required|regex:/^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$/|unique:tenants,slug', 'owner_email' => 'required|email|exists:users,email']);
+        if (is_string($request->input('owner_email'))) {
+            $request->merge(['owner_email' => strtolower(trim($request->input('owner_email')))]);
+        }
+        $data = $request->validate([
+            'name' => 'required|string|max:150', 'slug' => 'required|regex:/^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$/|unique:tenants,slug',
+            'create_owner' => 'sometimes|boolean',
+            'owner_email' => ['required', 'email', 'max:190', $request->boolean('create_owner') ? Rule::unique('users', 'email') : Rule::exists('users', 'email')],
+            'owner_name' => 'required_if:create_owner,true|nullable|string|max:100',
+            'owner_password' => 'required_if:create_owner,true|nullable|string|min:12|max:128|confirmed',
+            'current_password' => ['required_if:create_owner,true', 'string', 'current_password:web'],
+        ]);
         $tenant = DB::transaction(function () use ($request, $data) {
-            $owner = User::where('email', $data['owner_email'])->where('is_active', true)->firstOrFail();
+            $owner = $request->boolean('create_owner')
+                ? User::create(['name' => $data['owner_name'], 'email' => $data['owner_email'], 'password' => $data['owner_password']])
+                : User::where('email', $data['owner_email'])->where('is_active', true)->firstOrFail();
             $tenant = Tenant::create(['name' => $data['name'], 'slug' => $data['slug']]);
             $tenant->members()->attach($owner->id, ['role' => 'owner']);
             $this->audit($request, 'customer.created', $tenant->id, $tenant->id);
@@ -106,10 +118,10 @@ class AdminController extends Controller
 
     public function verifyPayment(Request $request, string $order): JsonResponse
     {
-        $data = $request->validate(['reference' => 'required|string|regex:/^[A-Za-z0-9._:-]{4,120}$/', 'amount_vnd' => 'required|integer|min:1000|max:1000000000000', 'confirmed_received' => 'required|accepted']);
+        $data = $request->validate(['reference' => 'required|string|regex:/^[A-Za-z0-9._:-]{4,120}$/', 'amount_vnd' => 'required|integer|min:1000|max:1000000000000', 'confirmed_received' => 'required|accepted', 'defer_installation' => 'sometimes|boolean']);
         $result = DB::transaction(function () use ($request, $order, $data) {
-            $result = app(CommerceService::class)->confirmPayment((int) $order, $data['reference'], $data['amount_vnd'], $request->user()->id);
-            $this->audit($request, 'payment.verified', $result->id, $result->tenant_id);
+            $result = app(CommerceService::class)->confirmPayment((int) $order, $data['reference'], $data['amount_vnd'], $request->user()->id, $data['defer_installation'] ?? false);
+            $this->audit($request, 'payment.verified', $result->id, $result->tenant_id, ['defer_installation' => $data['defer_installation'] ?? false]);
 
             return $result;
         });
@@ -124,15 +136,39 @@ class AdminController extends Controller
 
     public function install(Request $request, Tenant $tenant): JsonResponse
     {
-        $data = $request->validate(['driver' => ['required', Rule::in(['simulation', 'hetzner'])], 'idempotency_key' => 'required|uuid', 'notes' => 'nullable|string|max:3000', 'confirmed' => 'required|accepted']);
+        $data = $request->validate([
+            'driver' => ['required', Rule::in(['simulation', 'hetzner', 'ssh'])],
+            'idempotency_key' => 'required|uuid', 'notes' => 'nullable|string|max:3000', 'confirmed' => 'required|accepted',
+            'current_password' => ['required_if:driver,ssh', 'string', 'current_password:web'],
+            'dedicated_server' => ['required_if:driver,ssh', 'accepted_if:driver,ssh'],
+            'ssh_host' => ['prohibited_unless:driver,ssh'], 'ssh_port' => ['prohibited_unless:driver,ssh'],
+            'ssh_user' => ['prohibited_unless:driver,ssh'], 'ssh_password' => ['prohibited_unless:driver,ssh'], 'ssh_host_key' => ['prohibited_unless:driver,ssh'],
+        ]);
         $operation = DB::transaction(function () use ($request, $tenant, $data) {
-            $operation = app(DeploymentService::class)->request($tenant, $request->user(), $data['idempotency_key'], $data['driver'], $data['notes'] ?? null);
+            $operation = app(DeploymentService::class)->request($tenant, $request->user(), $data['idempotency_key'], $data['driver'], $data['notes'] ?? null, $request->only(['ssh_host', 'ssh_port', 'ssh_user', 'ssh_password', 'ssh_host_key']));
             $this->audit($request, 'installation.requested', $operation->id, $tenant->id, ['driver' => $data['driver']]);
 
             return $operation;
         });
 
         return response()->json($operation->fresh(), 202);
+    }
+
+    public function sshCredentials(Request $request, string $environment): JsonResponse
+    {
+        $data = $request->validate([
+            'action' => ['required', Rule::in(['replace', 'forget'])],
+            'current_password' => ['required', 'string', 'current_password:web'],
+            'ssh_password' => ['required_if:action,replace', 'nullable', 'string', 'max:1024', 'regex:/\A[^\x00\r\n]+\z/u'],
+        ]);
+        DB::transaction(function () use ($request, $environment, $data): void {
+            $record = Environment::whereKey($environment)->lockForUpdate()->firstOrFail();
+            abort_unless($record->driver === 'ssh' && $record->status === 'failed', 409, 'Chỉ thay hoặc xóa mật khẩu của tác vụ SSH đã dừng do lỗi.');
+            $record->update(['ssh_password' => $data['action'] === 'replace' ? $data['ssh_password'] : null]);
+            $this->audit($request, 'installation.ssh_credentials_'.$data['action'], $record->id, $record->tenant_id);
+        });
+
+        return response()->json(['message' => 'Đã cập nhật thông tin xác thực SSH. Không tự chạy lại tác vụ.']);
     }
 
     public function retry(Request $request, string $operation): JsonResponse
@@ -205,7 +241,7 @@ class AdminController extends Controller
             $checks[$key] = (bool) config('saas.'.$key);
         }
 
-        return response()->json(['domain' => config('saas.domain'), 'live_enabled' => (bool) config('saas.provisioning_enabled'), 'default_driver' => config('saas.driver'), 'checks' => $checks, 'release_url' => config('saas.artifact_url'), 'release_sha256' => config('saas.artifact_sha256'), 'bank_configured' => (bool) (config('commerce.bank.enabled') && config('commerce.bank.name') && config('commerce.bank.account_number') && config('commerce.bank.account_holder'))]);
+        return response()->json(['domain' => config('saas.domain'), 'live_enabled' => (bool) config('saas.provisioning_enabled'), 'ssh_enabled' => (bool) config('saas.ssh_enabled'), 'default_driver' => config('saas.driver'), 'checks' => $checks, 'release_url' => config('saas.artifact_url'), 'release_sha256' => config('saas.artifact_sha256'), 'bank_configured' => (bool) (config('commerce.bank.enabled') && config('commerce.bank.name') && config('commerce.bank.account_number') && config('commerce.bank.account_holder'))]);
     }
 
     public function auditLog(): JsonResponse

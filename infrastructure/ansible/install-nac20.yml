@@ -3,13 +3,37 @@
   hosts: all
   become: true
   gather_facts: false
+  no_log: true
   tasks:
+    - name: Prepare Python on a dedicated existing Debian 12 server
+      ansible.builtin.raw: |
+        set -eu
+        . /etc/os-release
+        test "$ID" = debian && test "$VERSION_ID" = 12 && test "$(uname -m)" = x86_64
+        binding=/opt/nac20-installer/saas-environment
+        if test -f "$binding"; then
+          test "$(cat "$binding")" = '{{ nac_deployment_id }}'
+        else
+          test ! -e /usr/local/pf
+          mkdir -p /opt/nac20-installer
+          chmod 0700 /opt/nac20-installer
+          printf '%s' '{{ nac_deployment_id }}' > "$binding"
+          chmod 0600 "$binding"
+        fi
+        if ! command -v python3 >/dev/null 2>&1; then
+          apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y python3
+          echo NAC20_PYTHON_PREPARED
+        fi
+      when: nac_bootstrap_python | default(false) | bool
+      register: nac_python
+      changed_when: "'NAC20_PYTHON_PREPARED' in nac_python.stdout"
     - name: Wait for SSH to become available
       ansible.builtin.wait_for_connection:
         timeout: 600
     - name: Wait for cloud-init package operations to finish
       ansible.builtin.command: cloud-init status --wait
       changed_when: false
+      when: nac_wait_cloud_init | default(true) | bool
     - name: Gather operating system facts
       ansible.builtin.setup:
     - name: Require a dedicated Debian 12 amd64 host and a pinned artifact

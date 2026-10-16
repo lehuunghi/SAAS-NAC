@@ -73,6 +73,7 @@ class TenantController extends Controller
                 return $existing;
             }
             abort_if(Environment::where('tenant_id', $tenant->id)->exists(), 409, 'Công ty đã có môi trường.');
+            abort_unless(in_array(config('saas.driver'), ['simulation', 'hetzner'], true), 409, 'Cài SSH trên máy có sẵn phải do admin TN20 thực hiện.');
             abort_unless(config('saas.provisioning_enabled') || config('saas.driver') === 'simulation', 409, 'TN20 chưa bật cấp phát thực tế.');
             if (config('saas.driver') !== 'simulation') {
                 abort_unless(ServiceSubscription::where('tenant_id', $tenant->id)->where('status', 'active')->where('expires_at', '>', now())->exists(), 409, 'Chưa có thuê bao được TN20 xác nhận.');

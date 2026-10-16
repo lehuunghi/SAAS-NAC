@@ -10,6 +10,7 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Services\Provisioning\HetznerProvisioner;
 use App\Services\Provisioning\SimulationProvisioner;
+use App\Services\Provisioning\SshProvisioner;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Cache;
@@ -57,18 +58,22 @@ class ProvisionEnvironment implements ShouldQueue
             if ($environment->driver !== 'simulation' && ! ServiceSubscription::where('tenant_id', $operation->tenant_id)->where('status', 'active')->where('expires_at', '>', now())->exists()) {
                 throw new RuntimeException('SUBSCRIPTION_INACTIVE');
             }
+            if ($environment->driver === 'ssh' && ! $actor->is_platform_admin) {
+                throw new RuntimeException('MEMBERSHIP_REVOKED');
+            }
             $operation->update(['status' => 'running', 'error_code' => null]);
             $environment->update(['status' => 'provisioning']);
             $provisioner = match ($environment->driver) {
                 'simulation' => app(SimulationProvisioner::class),
                 'hetzner' => config('saas.provisioning_enabled') ? app(HetznerProvisioner::class) : throw new RuntimeException('LIVE_DISABLED'),
+                'ssh' => config('saas.provisioning_enabled') && config('saas.ssh_enabled') ? app(SshProvisioner::class) : throw new RuntimeException('LIVE_DISABLED'),
                 default => throw new RuntimeException('UNKNOWN_DRIVER'),
             };
             $provisioner->install($environment, fn (string $stage) => $operation->update(['stage' => $stage]));
             $operation->update(['status' => 'completed']);
             AuditEvent::create(['tenant_id' => $operation->tenant_id, 'user_id' => $operation->requested_by, 'action' => 'environment.'.$environment->fresh()->status, 'subject' => (string) $environment->id]);
         } catch (Throwable $exception) {
-            $safeCodes = ['TENANT_INACTIVE', 'MEMBERSHIP_REVOKED', 'SUBSCRIPTION_INACTIVE', 'LIVE_DISABLED', 'UNKNOWN_DRIVER', 'MISSING_CONFIGURATION', 'INVALID_CONFIGURATION', 'RECONCILE_SERVER_BEFORE_RETRY', 'INVALID_SERVER_ADDRESS', 'INVALID_HOSTNAME', 'INVALID_ZONE', 'DNS_CONFLICT', 'ANSIBLE_FAILED'];
+            $safeCodes = ['TENANT_INACTIVE', 'MEMBERSHIP_REVOKED', 'SUBSCRIPTION_INACTIVE', 'LIVE_DISABLED', 'UNKNOWN_DRIVER', 'MISSING_CONFIGURATION', 'INVALID_CONFIGURATION', 'RECONCILE_SERVER_BEFORE_RETRY', 'INVALID_SERVER_ADDRESS', 'INVALID_SSH_TARGET', 'INVALID_HOSTNAME', 'INVALID_ZONE', 'DNS_CONFLICT', 'ANSIBLE_FAILED'];
             $operation->update(['status' => 'failed', 'error_code' => in_array($exception->getMessage(), $safeCodes, true) ? $exception->getMessage() : 'PROVISIONING_FAILED']);
             Environment::where('tenant_id', $operation->tenant_id)->whereKey($operation->environment_id)->update(['status' => 'failed']);
             // Provider exceptions may contain credentials or request payloads: do not persist their message.

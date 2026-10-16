@@ -65,6 +65,8 @@ Thay email thực tế; lệnh yêu cầu xác nhận. `--revoke` thu hồi quy�
 
 ## Kiểm tra
 
+Admin có thể tạo đồng thời công ty và tài khoản chủ công ty, sau đó chọn **Cài đặt cho khách → Máy chủ có sẵn — SSH bằng mật khẩu**. Thông tin máy riêng gồm IPv4 công khai, cổng, tài khoản, mật khẩu và khóa công khai Ed25519 của máy chủ. Mật khẩu được mã hóa, ẩn khỏi API và xóa khi cài thành công; trường hợp lỗi có chức năng thay/xóa. Cần bật triển khai, cấu hình DNS/worker và thuê bao hợp lệ; xem phần 13 của [hướng dẫn cài đặt](docs/CAI_DAT.md). Khi đối soát có thể chọn cài sau để không tự cấp môi trường trước khi chọn SSH.
+
 Cả hai khu quản trị có mục **Bảo mật tài khoản** để đổi mật khẩu (tối thiểu 12 ký tự, xác nhận mật khẩu hiện tại). Các phiên đã đăng nhập với mật khẩu cũ bị từ chối ở yêu cầu kế tiếp; phiên đang đổi được giữ lại và thay mã phiên/CSRF. Admin đổi mật khẩu được ghi vào nhật ký, không lưu mật khẩu trong nhật ký. Khôi phục qua email và MFA chưa được cung cấp.
 
 ```bash
