@@ -34,7 +34,7 @@ class CommerceController extends Controller
         $data = $request->validate([
             'name' => 'required|string|max:100', 'company' => 'required|string|max:150',
             'email' => 'required|email|max:190|unique:users,email',
-            'password' => 'required|string|min:12|max:200|confirmed', 'tenant_id' => 'prohibited', 'role' => 'prohibited',
+            'password' => 'required|string|min:12|max:200|confirmed', 'tenant_id' => 'prohibited', 'role' => 'prohibited', 'is_platform_admin' => 'prohibited', 'is_active' => 'prohibited',
         ]);
         $user = DB::transaction(function () use ($data) {
             $user = User::create(['name' => $data['name'], 'email' => strtolower($data['email']), 'password' => $data['password']]);

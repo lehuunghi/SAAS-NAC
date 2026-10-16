@@ -13,6 +13,7 @@ class AuthController extends Controller
     public function login(Request $request): JsonResponse
     {
         $credentials = $request->validate(['email' => 'required|email', 'password' => 'required|string']);
+        $credentials['is_active'] = true;
         if (! Auth::attempt($credentials)) {
             throw ValidationException::withMessages(['email' => 'Email hoặc mật khẩu không đúng.']);
         }

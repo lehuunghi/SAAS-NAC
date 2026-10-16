@@ -6,7 +6,7 @@ DB SaaS lưu tenants, users, memberships, sites, environments, operations, audit
 
 Mọi API dữ liệu công ty gọi `TenantPolicy` trước khi truy vấn. Danh sách công ty chỉ lấy theo memberships của người đăng nhập. Tài nguyên con được truy vấn thêm điều kiện tenant_id. Tham số người dùng không được mass-assign tenant_id. Chi nhánh được kiểm tra bằng exists có tenant_id; DB còn có khóa ngoại ghép làm lớp bảo vệ thứ hai.
 
-Không dùng quyền TN20 toàn cục để bypass tất cả policy; thao tác vận hành bản đầu thực hiện từ console tin cậy. Chưa có màn hình ops hoặc cơ chế hỗ trợ truy cập dữ liệu công ty.
+Không dùng quyền TN20 toàn cục để bypass tất cả tenant policy. API `/saas/api/v1/admin/*` có middleware riêng xác minh `is_platform_admin` từ DB; vai trò admin công ty không đủ quyền. Khu `/admin` quản lý vận hành qua các API này, có nhật ký `admin_audit_events`. Không có đăng nhập giả làm khách hàng hoặc SSO vào NAC.
 
 Mỗi công ty có tối đa một môi trường trong MVP. Khóa duy nhất DB và khóa hàng tenant trong transaction bảo vệ chống yêu cầu cạnh tranh. UUID chống lặp có phạm vi công ty. Khi cùng mã do người khác gửi, API trả conflict. Worker lấy khóa Redis theo công ty, kiểm tra lại trạng thái công ty, quyền người yêu cầu và thuê bao live.
 

@@ -11,7 +11,7 @@ class HetznerProvisioner implements Provisioner
 {
     public function install(Environment $environment, callable $progress): void
     {
-        $this->preflight();
+        $this->preflight($environment);
         $progress('creating_server');
         // Fixed provider origins: never accept URLs, SSH args or shell commands from the customer.
         $http = Http::baseUrl('https://api.hetzner.cloud/v1')->withToken(config('saas.hcloud.token'))->timeout(30)->connectTimeout(10);
@@ -51,15 +51,15 @@ class HetznerProvisioner implements Provisioner
         $progress('awaiting_configuration');
     }
 
-    private function preflight(): void
+    private function preflight(Environment $environment): void
     {
         foreach (['hcloud.token', 'hcloud.ssh_key_id', 'hcloud.firewall_id', 'hcloud.server_type', 'hcloud.location', 'cloudflare.token', 'cloudflare.zone_id', 'ssh_key', 'known_hosts', 'artifact_url', 'artifact_sha256'] as $key) {
             if (! config('saas.'.$key)) {
                 throw new RuntimeException('MISSING_CONFIGURATION');
             }
         }
-        if (! preg_match('/\Ahttps:\/\/github\.com\/lehuunghi\/NAC\/releases\/download\/[A-Za-z0-9._-]+\/nac20-debian12-amd64-online\.tar\.gz\z/', config('saas.artifact_url'))
-            || ! preg_match('/\A[a-f0-9]{64}\z/', config('saas.artifact_sha256'))
+        if (! preg_match('/\Ahttps:\/\/github\.com\/lehuunghi\/NAC\/releases\/download\/[A-Za-z0-9._-]+\/nac20-debian12-amd64-online\.tar\.gz\z/', $environment->release_url ?? config('saas.artifact_url'))
+            || ! preg_match('/\A[a-f0-9]{64}\z/', $environment->release_sha256 ?? config('saas.artifact_sha256'))
             || ! is_file(config('saas.ssh_key')) || ! is_file(config('saas.known_hosts'))
             || ! is_file(config('saas.ansible_binary'))) {
             throw new RuntimeException('INVALID_CONFIGURATION');
@@ -101,8 +101,8 @@ class HetznerProvisioner implements Provisioner
             'ansible_user' => 'root',
             'ansible_ssh_private_key_file' => config('saas.ssh_key'),
             'ansible_ssh_common_args' => '-o StrictHostKeyChecking=yes -o UserKnownHostsFile='.escapeshellarg(config('saas.known_hosts')),
-            'nac_artifact_url' => config('saas.artifact_url'),
-            'nac_artifact_sha256' => config('saas.artifact_sha256'),
+            'nac_artifact_url' => $environment->release_url ?? config('saas.artifact_url'),
+            'nac_artifact_sha256' => $environment->release_sha256 ?? config('saas.artifact_sha256'),
         ]]]], JSON_THROW_ON_ERROR));
         try {
             $result = Process::timeout(2100)->env(['ANSIBLE_HOST_KEY_CHECKING' => 'True'])

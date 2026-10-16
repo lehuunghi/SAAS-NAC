@@ -2,18 +2,21 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import PublicSite from './PublicSite.vue';
 import CommercePanel from './CommercePanel.vue';
+import AdminPanel from './AdminPanel.vue';
+import AccountPanel from './AccountPanel.vue';
 
 const user = ref(null), companies = ref([]), selected = ref(''), data = ref(null);
 const page = ref('overview'), error = ref(''), busy = ref(false), loading = ref(true);
 const email = ref(''), password = ref(''), siteName = ref(''), siteCode = ref('');
-const authView = ref(location.hash === '#dang-nhap'), registerMode = ref(false), registrationEnabled = ref(false);
+const adminPage = ref(location.pathname === '/admin');
+const authView = ref(location.hash === '#dang-nhap' || adminPage.value), registerMode = ref(false), registrationEnabled = ref(false);
 const fullName = ref(''), companyName = ref(''), confirmPassword = ref('');
 const publicPage = ref(location.pathname === '/san-pham');
 let timer, generation = 0;
-const labels = { requested: 'Đã yêu cầu', queued: 'Đang chờ', running: 'Đang thực hiện', provisioning: 'Đang cấp phát', simulated: 'Đã mô phỏng', completed: 'Hoàn tất tác vụ', failed: 'Cần xử lý', awaiting_configuration: 'Chờ cấu hình NAC20' };
+const labels = { requested: 'Đã yêu cầu', queued: 'Đang chờ', running: 'Đang thực hiện', provisioning: 'Đang cấp phát', simulated: 'Đã mô phỏng', completed: 'Hoàn tất tác vụ', failed: 'Cần xử lý', awaiting_configuration: 'Chờ cấu hình NAC20', ready: 'Đã được TN20 nghiệm thu / bàn giao' };
 const stateLabel = value => labels[value] || value;
 const env = computed(() => data.value?.environments?.[0]);
-const navigation = [ ['overview', '◈', 'Tổng quan'], ['quotes', '◇', 'Tư vấn & báo giá'], ['orders', '▧', 'Đơn hàng'], ['payments', '◉', 'Lịch sử thanh toán'], ['subscription', '▣', 'Dịch vụ của tôi'], ['sites', '▦', 'Chi nhánh'], ['infrastructure', '▤', 'Hạ tầng NAC20'], ['support', '◌', 'Hỗ trợ'], ['activity', '◷', 'Lịch sử hoạt động'] ];
+const navigation = [ ['overview', '◈', 'Tổng quan'], ['quotes', '◇', 'Tư vấn & báo giá'], ['orders', '▧', 'Đơn hàng'], ['payments', '◉', 'Lịch sử thanh toán'], ['subscription', '▣', 'Dịch vụ của tôi'], ['sites', '▦', 'Chi nhánh'], ['infrastructure', '▤', 'Hạ tầng NAC20'], ['company', '▢', 'Hồ sơ công ty'], ['team', '♙', 'Thành viên'], ['support', '◌', 'Hỗ trợ'], ['activity', '◷', 'Lịch sử hoạt động'] ];
 async function api(path, options = {}) {
     const response = await fetch('/saas/api/v1/' + path, { credentials: 'same-origin', ...options,
         headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content, ...options.headers } });
@@ -38,7 +41,7 @@ async function login() {
     try {
         const body = registerMode.value ? { name: fullName.value, company: companyName.value, email: email.value, password: password.value, password_confirmation: confirmPassword.value } : { email: email.value, password: password.value };
         await api(registerMode.value ? 'register' : 'login', { method: 'POST', body: JSON.stringify(body) });
-        if (location.pathname === '/') { location.hash = '#devis'; location.reload(); } else { location.href = '/#devis'; }
+        if (adminPage.value) { location.reload(); } else if (location.pathname === '/') { location.hash = '#devis'; location.reload(); } else { location.href = '/#devis'; }
     }
     catch (e) { error.value = e.message; } finally { password.value = ''; busy.value = false; }
 }
@@ -63,6 +66,7 @@ onUnmounted(() => clearInterval(timer));
 
 <template>
     <div v-if="loading" class="boot" role="status">Đang mở không gian NAC20…</div>
+    <template v-else-if="adminPage && user"><AdminPanel v-if="user.is_platform_admin" :user="user" :api="api" @logout="logout"/><main v-else class="content"><section class="panel"><h1>Khu quản trị TN20</h1><p class="notice">Tài khoản hiện tại không có quyền quản trị nền tảng.</p><a class="primary" href="/">Về khu khách hàng</a><button class="text-button" @click="logout">Đăng xuất</button></section></main></template>
     <PublicSite v-else-if="publicPage || (!user && !authView)" :authenticated="!!user" @login="publicPage=false; authView=true; registerMode=false" @register="publicPage=false; authView=true; registerMode=true" />
     <main v-else-if="!user" class="login-layout">
         <section class="login-story"><a class="brand" href="/">NAC<span>20</span><small>CLOUD</small></a><div><p class="eyebrow">HẠ TẦNG TẬP TRUNG · KIỂM SOÁT ĐỘC LẬP</p><h1>Mọi chi nhánh.<br>Một không gian<br><em>điều hành.</em></h1><p>Quản lý môi trường NAC20 của doanh nghiệp trên nền tảng dịch vụ của TN20.</p><div class="story-grid"><span>Môi trường riêng</span><span>Quyền theo công ty</span><span>Kết nối Connector</span></div></div><footer>Công Ty TNHH TN20 · 20.com.vn</footer></section>
@@ -71,9 +75,10 @@ onUnmounted(() => clearInterval(timer));
     <div v-else class="workspace">
         <aside class="sidebar"><a href="/" class="brand">NAC<span>20</span><small>CLOUD</small></a><div class="company-picker"><label for="company">KHÔNG GIAN CÔNG TY</label><select id="company" :value="selected" @change="selectCompany(Number($event.target.value))"><option v-for="company in companies" :key="company.id" :value="company.id">{{ company.name }}</option></select></div><nav aria-label="Điều hướng chính"><button v-for="item in navigation" :key="item[0]" :class="{ active: page === item[0] }" @click="page = item[0]"><span>{{ item[1] }}</span>{{ item[2] }}</button></nav><div class="sidebar-bottom"><span class="dot"></span> Công Ty TNHH TN20<p>20.com.vn</p></div></aside>
         <div class="main-area"><header class="topbar"><span>Nền tảng dịch vụ <b>/ {{ navigation.find(n => n[0] === page)?.[2] }}</b></span><div><span class="avatar">{{ user.name.slice(0,1) }}</span><span>{{ user.name }}</span><button class="text-button" @click="logout">Đăng xuất</button></div></header>
-            <main class="content"><div class="page-heading"><div><p class="eyebrow">NAC20 · {{ data?.tenant?.slug || 'KHÔNG GIAN DOANH NGHIỆP' }}</p><h1>{{ navigation.find(n => n[0] === page)?.[2] }}</h1><p class="muted">{{ data?.tenant?.name || 'Chọn công ty để bắt đầu.' }}</p></div><button class="secondary" @click="refresh">↻ Cập nhật</button></div><p v-if="error" role="alert" class="error">{{ error }}</p><p v-if="!companies.length" class="panel">Tài khoản chưa được gán công ty. Liên hệ quản trị TN20 để cấp quyền.</p>
+            <main class="content"><p v-if="user.is_platform_admin" class="notice"><a href="/admin">↗ Chuyển sang quản trị nền tảng TN20</a></p><div class="page-heading"><div><p class="eyebrow">NAC20 · {{ data?.tenant?.slug || 'KHÔNG GIAN DOANH NGHIỆP' }}</p><h1>{{ navigation.find(n => n[0] === page)?.[2] }}</h1><p class="muted">{{ data?.tenant?.name || 'Chọn công ty để bắt đầu.' }}</p></div><button class="secondary" @click="refresh">↻ Cập nhật</button></div><p v-if="error" role="alert" class="error">{{ error }}</p><p v-if="!companies.length" class="panel">Tài khoản chưa được gán công ty. Liên hệ quản trị TN20 để cấp quyền.</p>
                 <template v-if="data">
                     <CommercePanel v-if="['quotes','orders','payments','subscription','support'].includes(page)" :tenant-id="selected" :page="page" :can-manage="data.can_manage" :api="api" :key="selected" />
+                    <AccountPanel v-if="['company','team'].includes(page)" :key="selected" :tenant="data.tenant" :user="user" :can-manage="data.can_manage" :page="page" :api="api" />
                     <template v-if="page === 'overview'">
                         <section class="hero"><div><p class="eyebrow">KHÔNG GIAN CỦA DOANH NGHIỆP</p><h2>Hạ tầng riêng.<br>Điều hành tập trung.</h2><p>Theo dõi chi nhánh, môi trường NAC20 và tiến trình triển khai của công ty.</p><button class="light-button" @click="page = 'infrastructure'">Xem hạ tầng NAC20 ↗</button></div><div class="network-art" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="network-core">NAC<b>20</b></div><span class="node node-a"></span><span class="node node-b"></span><span class="node node-c"></span></div></section>
                         <section class="stats"><article><span>Chi nhánh</span><strong>{{ data.sites.length }}</strong><small>Trong công ty đang chọn</small></article><article><span>Môi trường NAC20</span><strong>{{ data.environments.length }}</strong><small>Mỗi công ty một môi trường riêng</small></article><article><span>Trạng thái triển khai</span><strong class="stat-text">{{ env ? stateLabel(env.status) : 'Chưa khởi tạo' }}</strong><small>Theo kết quả tác vụ máy chủ</small></article></section>

@@ -10,7 +10,7 @@ class Tenant extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['name', 'slug', 'status'];
+    protected $fillable = ['name', 'slug', 'status', 'contact_name', 'phone', 'tax_code', 'address'];
 
     public function members(): BelongsToMany
     {

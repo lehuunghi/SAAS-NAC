@@ -105,6 +105,18 @@ Artisan::command('saas:dispatch-pending', function () {
 
 Schedule::command('saas:dispatch-pending')->everyMinute()->withoutOverlapping();
 
+Artisan::command('saas:admin {email} {--revoke}', function () {
+    $user = User::where('email', strtolower($this->argument('email')))->firstOrFail();
+    if (! $this->confirm(($this->option('revoke') ? 'Thu hồi' : 'Cấp').' quyền quản trị toàn nền tảng cho '.$user->email.'?')) {
+        return 1;
+    }
+    DB::transaction(function () use ($user) {
+        $user->forceFill(['is_platform_admin' => ! $this->option('revoke')])->save();
+        DB::table('admin_audit_events')->insert(['user_id' => null, 'tenant_id' => null, 'action' => $this->option('revoke') ? 'platform_admin.revoked_by_console' : 'platform_admin.granted_by_console', 'subject' => (string) $user->id, 'created_at' => now(), 'updated_at' => now()]);
+    });
+    $this->info('Đã cập nhật quyền. Tài khoản admin đăng nhập tại /admin.');
+})->purpose('Chỉ console TN20 được cấp/thu hồi admin; không có API tự nâng quyền');
+
 Artisan::command('saas:sales', function () {
     $this->table(['Yêu cầu', 'Công ty', 'Gói', 'Thiết bị', 'Chi nhánh', 'Trạng thái'], QuoteRequest::latest('id')->limit(50)->get(['id', 'tenant_id', 'plan_code', 'devices', 'branches', 'status'])->toArray());
     $this->table(['Đơn', 'Công ty', 'Số tiền VND', 'Trạng thái'], Order::latest('id')->limit(50)->get(['id', 'tenant_id', 'amount_vnd', 'status'])->toArray());

@@ -7,6 +7,7 @@ use App\Models\Environment;
 use App\Models\Operation;
 use App\Models\ServiceSubscription;
 use App\Models\Tenant;
+use App\Models\User;
 use App\Services\Provisioning\HetznerProvisioner;
 use App\Services\Provisioning\SimulationProvisioner;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -49,7 +50,8 @@ class ProvisionEnvironment implements ShouldQueue
             if (Tenant::findOrFail($operation->tenant_id)->status !== 'active') {
                 throw new RuntimeException('TENANT_INACTIVE');
             }
-            if (! Tenant::findOrFail($operation->tenant_id)->members()->where('users.id', $operation->requested_by)->wherePivotIn('role', ['owner', 'admin'])->exists()) {
+            $actor = User::find($operation->requested_by);
+            if (! $actor?->is_active || (! $actor->is_platform_admin && ! Tenant::findOrFail($operation->tenant_id)->members()->where('users.id', $operation->requested_by)->wherePivotIn('role', ['owner', 'admin'])->exists())) {
                 throw new RuntimeException('MEMBERSHIP_REVOKED');
             }
             if ($environment->driver !== 'simulation' && ! ServiceSubscription::where('tenant_id', $operation->tenant_id)->where('status', 'active')->where('expires_at', '>', now())->exists()) {
@@ -66,7 +68,8 @@ class ProvisionEnvironment implements ShouldQueue
             $operation->update(['status' => 'completed']);
             AuditEvent::create(['tenant_id' => $operation->tenant_id, 'user_id' => $operation->requested_by, 'action' => 'environment.'.$environment->fresh()->status, 'subject' => (string) $environment->id]);
         } catch (Throwable $exception) {
-            $operation->update(['status' => 'failed', 'error_code' => 'PROVISIONING_FAILED']);
+            $safeCodes = ['TENANT_INACTIVE', 'MEMBERSHIP_REVOKED', 'SUBSCRIPTION_INACTIVE', 'LIVE_DISABLED', 'UNKNOWN_DRIVER', 'MISSING_CONFIGURATION', 'INVALID_CONFIGURATION', 'RECONCILE_SERVER_BEFORE_RETRY', 'INVALID_SERVER_ADDRESS', 'INVALID_HOSTNAME', 'INVALID_ZONE', 'DNS_CONFLICT', 'ANSIBLE_FAILED'];
+            $operation->update(['status' => 'failed', 'error_code' => in_array($exception->getMessage(), $safeCodes, true) ? $exception->getMessage() : 'PROVISIONING_FAILED']);
             Environment::where('tenant_id', $operation->tenant_id)->whereKey($operation->environment_id)->update(['status' => 'failed']);
             // Provider exceptions may contain credentials or request payloads: do not persist their message.
             AuditEvent::create(['tenant_id' => $operation->tenant_id, 'action' => 'environment.failed', 'subject' => (string) $operation->environment_id]);

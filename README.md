@@ -20,6 +20,9 @@ Cổng quản trị nhiều công ty độc lập bằng **Laravel 13 + Vue 3 + 
 - Khách đăng ký không gian mới, gửi nhu cầu, xem báo giá riêng, xác nhận/hủy đơn và báo đã chuyển khoản. Chủ công ty/admin được xem lịch sử giao dịch và thuê bao; operator/viewer không xem tài chính.
 - TN20 phát hành báo giá và đối soát từ console; kiểm tra đúng số tiền, tham chiếu chống trùng, gia hạn theo thời gian còn lại. Chỉ sau xác nhận mới kích hoạt dịch vụ và tạo tác vụ cấp phát nếu được cấu hình.
 - Yêu cầu hỗ trợ và phản hồi trong cổng, phân trang lịch sử theo công ty. Chưa có email tự động hoặc hóa đơn thuế điện tử.
+- Khu `/admin` riêng cho admin TN20: tổng quan doanh thu đã đối soát, khách hàng, phát hành báo giá, đối soát, hỗ trợ, khóa tài khoản và nhật ký quản trị.
+- Admin chọn khách hàng để cài NAC20, theo dõi tác vụ, thử lại sau đối soát và ghi nhận nghiệm thu/bàn giao. Bản cài admin được lưu URL/SHA-256 theo môi trường; không nhận lệnh shell hoặc token từ khách.
+- Khu khách hàng có hồ sơ công ty, tên hiển thị và danh sách thành viên. Chủ công ty phải xác minh mật khẩu hiện tại khi cấp/thu hồi quyền; không thể cấp admin TN20 qua API.
 
 ## Cài và vận hành
 
@@ -49,6 +52,16 @@ Web lắng nghe `http://127.0.0.1:8088`; đặt reverse proxy HTTPS phía trư�
 Thanh toán/webhook tự động, MFA/khôi phục mật khẩu, xác minh email, mời thành viên qua email, quản lý MAC qua cổng SaaS, SSO sang NAC, đăng ký Connector một lần, tự hoàn tất trình cấu hình NAC/TLS, backup/khôi phục tự động và HA. Các mục này không được coi là đã hoạt động chỉ vì có thiết kế. Chuyển khoản hiện đối soát thủ công, cần TN20 cấu hình thông tin ngân hàng thật trước khi tiếp nhận.
 
 Chưa có thông tin nhà cung cấp hạ tầng/DNS của TN20. Hetzner và Cloudflare là adapter tùy chọn, có kiểm thử HTTP giả lập; không khẳng định đó là hạ tầng TN20 đang dùng. Không có máy thật, DNS hoặc giao dịch thanh toán nào được tạo bởi quá trình phát triển này.
+
+## Cấp tài khoản admin TN20
+
+Sau khi đã có tài khoản người vận hành, chạy tại console tin cậy:
+
+```bash
+docker compose exec app php artisan saas:admin EMAIL_NGUOI_VAN_HANH
+```
+
+Thay email thực tế; lệnh yêu cầu xác nhận. `--revoke` thu hồi quyền. Không có mật khẩu hoặc admin mặc định. Quyền `admin` trong một công ty khác với `is_platform_admin`; khách đăng ký không được tự cấp cờ này. Admin đăng nhập tại `/admin`, khách dùng `/`.
 
 ## Kiểm tra
 

@@ -16,12 +16,12 @@ use Illuminate\Support\Str;
 
 class CommerceService
 {
-    public function issueQuote(int $requestId, int $amount, int $days, string $terms): Order
+    public function issueQuote(int $requestId, int $amount, int $days, string $terms, ?int $actorId = null): Order
     {
         abort_unless($amount >= 1000 && $amount <= 1000000000000 && $days >= 1 && $days <= 366 && mb_strlen($terms) >= 10, 422, 'Giá, thời hạn và điều khoản báo giá chưa hợp lệ.');
         $request = QuoteRequest::findOrFail($requestId);
 
-        return DB::transaction(function () use ($request, $amount, $days, $terms) {
+        return DB::transaction(function () use ($request, $amount, $days, $terms, $actorId) {
             Tenant::whereKey($request->tenant_id)->lockForUpdate()->firstOrFail();
             $request->refresh();
             abort_unless($request->status === 'requested', 409, 'Yêu cầu đã được xử lý.');
@@ -34,18 +34,18 @@ class CommerceService
                 'terms' => $terms, 'expires_at' => now()->addDays(7),
             ]);
             $request->update(['status' => 'quoted']);
-            $this->audit($request->tenant_id, 'quote.issued_by_console', $order->id);
+            $this->audit($request->tenant_id, $actorId ? 'quote.issued_by_admin' : 'quote.issued_by_console', $order->id, $actorId);
 
             return $order;
         });
     }
 
-    public function confirmPayment(int $orderId, string $reference, int $receivedAmount): Order
+    public function confirmPayment(int $orderId, string $reference, int $receivedAmount, ?int $actorId = null): Order
     {
         abort_unless(preg_match('/\A[A-Za-z0-9._:-]{4,120}\z/', $reference), 422, 'Tham chiếu giao dịch không hợp lệ.');
         $initial = Order::findOrFail($orderId);
 
-        return DB::transaction(function () use ($initial, $reference, $receivedAmount) {
+        return DB::transaction(function () use ($initial, $reference, $receivedAmount, $actorId) {
             $tenant = Tenant::whereKey($initial->tenant_id)->lockForUpdate()->firstOrFail();
             $order = Order::where('tenant_id', $tenant->id)->lockForUpdate()->findOrFail($initial->id);
             if ($order->status === 'paid') {
@@ -64,7 +64,7 @@ class CommerceService
                 'plan_code' => $order->plan_code, 'expires_at' => $start->addDays($order->service_days),
             ]);
             $order->update(['status' => 'paid', 'paid_at' => now()]);
-            $this->audit($tenant->id, 'payment.verified_by_console', $order->id);
+            $this->audit($tenant->id, $actorId ? 'payment.verified_by_admin' : 'payment.verified_by_console', $order->id, $actorId);
             if (! Environment::where('tenant_id', $tenant->id)->exists() && (config('saas.driver') === 'simulation' || config('saas.provisioning_enabled'))) {
                 $owner = $tenant->members()->wherePivot('role', 'owner')->first();
                 if ($owner) {
@@ -78,8 +78,8 @@ class CommerceService
         });
     }
 
-    private function audit(int $tenantId, string $action, int $subject): void
+    private function audit(int $tenantId, string $action, int $subject, ?int $actorId = null): void
     {
-        AuditEvent::create(['tenant_id' => $tenantId, 'action' => $action, 'subject' => (string) $subject]);
+        AuditEvent::create(['tenant_id' => $tenantId, 'user_id' => $actorId, 'action' => $action, 'subject' => (string) $subject]);
     }
 }

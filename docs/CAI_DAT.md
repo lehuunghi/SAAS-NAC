@@ -187,3 +187,29 @@ docker compose exec app php artisan saas:ticket-reply ID_YEU_CAU_HO_TRO "Nội d
 ```
 
 Bỏ `--close` để giữ trạng thái đã phản hồi. Nội dung nằm trong ứng dụng, không tự gửi email. Lịch sử có phân trang và giới hạn theo công ty. Bản đầu chưa có tệp đính kèm hoặc hội thoại nhiều lượt; phản hồi console cập nhật phần trả lời của yêu cầu.
+
+## 12. Khu quản trị TN20 và khu khách hàng
+
+Sau khi cập nhật mã, dựng lại image, chạy migration và khởi động lại app/worker/scheduler. Migration thêm cờ admin/khóa tài khoản và nhật ký quản trị, không tự cấp quyền cho tài khoản cũ.
+
+Tài khoản người vận hành phải tồn tại trước. Có thể đăng ký tài khoản riêng qua cổng hoặc dùng quy trình tạo tài khoản console hiện có, sau đó:
+
+```bash
+docker compose exec app php artisan saas:admin EMAIL_NGUOI_VAN_HANH
+```
+
+Chạy tại console TN20 và xác nhận đúng email. Dùng `--revoke` để thu hồi. Không có API tự cấp quyền admin, không cấp cờ này trong form đăng ký hoặc chỉnh vai trò công ty. Quyền bị thu hồi có hiệu lực ở yêu cầu kế tiếp. Không có admin/mật khẩu mặc định.
+
+**Admin TN20 đăng nhập tại `/admin`:**
+
+1. Tổng quan: khách hàng, yêu cầu báo giá, chờ đối soát, doanh thu đã xác nhận, tác vụ lỗi và hỗ trợ đang mở.
+2. Khách hàng: tìm kiếm, tạo công ty cho tài khoản đã có, chỉnh hồ sơ, trạng thái hoạt động/tạm ngưng và xem thành viên. Tạm ngưng không tự tắt VM hoặc RADIUS.
+3. Bán hàng: xem nhu cầu, lập báo giá riêng và đối soát đơn đã xác nhận. Khi ghi nhận thanh toán phải xác nhận đã kiểm tra giao dịch thực nhận; không thực hiện chuyển tiền.
+4. Cài đặt cho khách: chọn đúng khách từ danh sách hoặc nhập ID và tải hồ sơ; xem thuê bao và môi trường hiện có. Chọn mô phỏng hoặc cấp phát thật nếu được bật, nhập ghi chú không chứa bí mật, xác nhận và tạo tác vụ.
+5. Theo dõi VM, IP, trạng thái và bước cài. Hệ thống chặn cài đè môi trường có sẵn. Tác vụ lỗi chỉ thử lại sau đối soát; live chưa có server_id phải xử lý tại vận hành trước, không tự tạo máy lần nữa.
+6. Nghiệm thu: chỉ môi trường thật ở trạng thái chờ cấu hình, có server_id/IP mới được bàn giao. TN20 kiểm tra DB/tài khoản, TLS, Connector, RADIUS thực tế và sao lưu/khôi phục, rồi ghi bằng chứng/biên bản. Các ô xác nhận là lời xác nhận của người nghiệm thu, không thay kiểm thử tự động hoặc chứng minh dịch vụ đã chạy chỉ bằng giao diện.
+7. Hỗ trợ: đọc, phản hồi và đóng yêu cầu. Tài khoản: khóa/mở tài khoản khách; không tự đổi cờ admin qua màn hình này. Cấu hình: chỉ hiện tình trạng khai báo, không trả token hoặc khóa SSH.
+
+**Khách hàng đăng nhập tại `/`:** báo giá, đơn, thanh toán, thời hạn, chi nhánh, hạ tầng, hỗ trợ, hồ sơ công ty và thành viên. Owner/admin xem thông tin tài chính; operator/viewer chỉ có quyền đọc phần được phép. Chủ công ty mới được cấp/thu hồi quyền thành viên, phải nhập mật khẩu hiện tại. Thành viên được thêm cần có tài khoản đã đăng ký; đây là gán quyền cho tài khoản hiện hữu, chưa phải lời mời qua email. Không đổi/xóa vai trò owner từ màn hình thành viên.
+
+Cấu hình API hạ tầng, DNS, SSH và chứng thư vẫn do TN20 chuẩn bị như bước 6–8. Màn hình admin không tự cấp token nhà cung cấp, bỏ kiểm tra SSH host key hoặc hoàn tất trình cấu hình NAC chưa được tự động hóa. Bản pilot vẫn cần MFA/xác minh email, cổng thanh toán tự động và nghiệm thu hạ tầng trước khi vận hành công khai.

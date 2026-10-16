@@ -1,0 +1,58 @@
+<?php
+
+namespace App\Services;
+
+use App\Jobs\ProvisionEnvironment;
+use App\Models\AuditEvent;
+use App\Models\Environment;
+use App\Models\Operation;
+use App\Models\ServiceSubscription;
+use App\Models\Tenant;
+use App\Models\User;
+use Illuminate\Support\Facades\DB;
+
+class DeploymentService
+{
+    public function request(Tenant $tenant, User $actor, string $key, string $driver, ?string $notes = null): Operation
+    {
+        abort_unless($actor->is_active && $actor->is_platform_admin, 403);
+        abort_unless(in_array($driver, ['simulation', 'hetzner'], true), 422);
+
+        return DB::transaction(function () use ($tenant, $actor, $key, $driver, $notes) {
+            $current = Tenant::whereKey($tenant->id)->lockForUpdate()->firstOrFail();
+            abort_unless($current->status === 'active', 409, 'Khách hàng đang tạm ngưng.');
+            $existing = Operation::where('tenant_id', $tenant->id)->where('idempotency_key', $key)->first();
+            if ($existing) {
+                return $existing;
+            }
+            abort_if(Environment::where('tenant_id', $tenant->id)->exists(), 409, 'Khách hàng đã có môi trường. Không cài đè dữ liệu.');
+            if ($driver !== 'simulation') {
+                abort_unless(config('saas.provisioning_enabled'), 409, 'Chưa bật cấp phát thực tế.');
+                abort_unless(ServiceSubscription::where('tenant_id', $tenant->id)->where('status', 'active')->where('expires_at', '>', now())->exists(), 409, 'Khách hàng chưa có thuê bao hiệu lực.');
+            }
+            $environment = Environment::create([
+                'tenant_id' => $tenant->id, 'hostname' => $tenant->slug.'.'.config('saas.domain'),
+                'driver' => $driver, 'release_url' => config('saas.artifact_url'), 'release_sha256' => config('saas.artifact_sha256'), 'deployment_notes' => $notes,
+            ]);
+            $operation = Operation::create(['tenant_id' => $tenant->id, 'environment_id' => $environment->id, 'requested_by' => $actor->id, 'idempotency_key' => $key]);
+            AuditEvent::create(['tenant_id' => $tenant->id, 'user_id' => $actor->id, 'action' => 'environment.requested_by_admin', 'subject' => (string) $environment->id]);
+            ProvisionEnvironment::dispatch($operation->id)->afterCommit();
+
+            return $operation;
+        });
+    }
+
+    public function retry(Operation $operation, User $actor): void
+    {
+        abort_unless($actor->is_active && $actor->is_platform_admin, 403);
+        DB::transaction(function () use ($operation, $actor) {
+            Tenant::whereKey($operation->tenant_id)->lockForUpdate()->firstOrFail();
+            $operation->refresh();
+            $environment = Environment::where('tenant_id', $operation->tenant_id)->findOrFail($operation->environment_id);
+            abort_unless($operation->status === 'failed' && $environment->status === 'failed', 409, 'Chỉ thử lại tác vụ lỗi.');
+            abort_unless($environment->driver === 'simulation' || $environment->server_id, 409, 'Phải đối soát máy chủ trước khi thử lại.');
+            $operation->update(['status' => 'queued', 'error_code' => null, 'requested_by' => $actor->id]);
+            ProvisionEnvironment::dispatch($operation->id)->afterCommit();
+        });
+    }
+}
