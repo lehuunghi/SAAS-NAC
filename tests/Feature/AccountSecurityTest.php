@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
@@ -24,7 +25,9 @@ class AccountSecurityTest extends TestCase
         $this->assertTrue(Hash::check('Replacement-Password-2026!', $user->fresh()->password));
         $this->assertTrue(Hash::check('Other-Password-2026!', $other->fresh()->password));
         $this->getJson('/saas/api/v1/admin/overview')->assertOk();
-        $this->assertDatabaseHas('admin_audit_events', ['user_id' => $user->id, 'action' => 'account.password_changed', 'details' => '{}']);
+        $this->assertDatabaseHas('admin_audit_events', ['user_id' => $user->id, 'action' => 'account.password_changed']);
+        $details = DB::table('admin_audit_events')->where('user_id', $user->id)->where('action', 'account.password_changed')->value('details');
+        $this->assertSame([], json_decode($details, true, 512, JSON_THROW_ON_ERROR));
 
         // Simulate a second browser that still holds the previous credential hash.
         $this->withSession(['password_hash_web' => Auth::guard('web')->hashPasswordForCookie($oldHash)])
