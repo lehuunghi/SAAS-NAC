@@ -9,6 +9,7 @@ use App\Models\QuoteRequest;
 use App\Models\ServiceSubscription;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Services\Provisioning\AnsibleInstaller;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -17,6 +18,7 @@ use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
+use Symfony\Component\Process\Process as NativeProcess;
 use Tests\TestCase;
 
 class SshInstallationTest extends TestCase
@@ -25,7 +27,7 @@ class SshInstallationTest extends TestCase
 
     private const ADMIN_PASSWORD = 'Admin-Test-Password-2026!';
 
-    private const SSH_PASSWORD = ' Synthetic-SSH-Password-$`! ';
+    private const SSH_PASSWORD = ' Synthetic-SSH-Password-$`! {{ 3 * 7 }} ';
 
     private array $files = [];
 
@@ -58,6 +60,19 @@ class SshInstallationTest extends TestCase
     private function requestInstall(Tenant $tenant, array $body): TestResponse
     {
         return $this->postJson('/saas/api/v1/admin/customers/'.$tenant->id.'/install', $body);
+    }
+
+    private function inventoryVariables(string $file): array
+    {
+        $content = file_get_contents($file);
+        $this->assertStringContainsString('ansible_password: !unsafe ', $content);
+        preg_match_all('/^      ([a-z0-9_]+): (?:!unsafe )?(.+)$/m', $content, $matches, PREG_SET_ORDER);
+        $variables = [];
+        foreach ($matches as $match) {
+            $variables[$match[1]] = json_decode($match[2], true, 512, JSON_THROW_ON_ERROR);
+        }
+
+        return $variables;
     }
 
     protected function tearDown(): void
@@ -140,7 +155,7 @@ class SshInstallationTest extends TestCase
         Process::fake(function ($process) use (&$temporaryFiles) {
             $this->assertIsArray($process->command);
             $this->assertStringNotContainsString(self::SSH_PASSWORD, json_encode($process->command));
-            $inventory = json_decode(file_get_contents($process->command[2]), true, 512, JSON_THROW_ON_ERROR)['all']['hosts']['nac20'];
+            $inventory = $this->inventoryVariables($process->command[2]);
             $this->assertSame(self::SSH_PASSWORD, $inventory['ansible_password']);
             $this->assertSame(2222, $inventory['ansible_port']);
             $this->assertFalse($inventory['nac_wait_cloud_init']);
@@ -207,6 +222,35 @@ class SshInstallationTest extends TestCase
         $this->postJson('/saas/api/v1/admin/customers', $body)->assertUnprocessable()->assertJsonValidationErrors('current_password');
         $this->postJson('/saas/api/v1/admin/customers', [...$body, 'current_password' => self::ADMIN_PASSWORD, 'owner_email' => $admin->email])->assertUnprocessable()->assertJsonValidationErrors('owner_email');
         $this->assertDatabaseMissing('users', ['email' => 'new-owner@example.test']);
+    }
+
+    public function test_real_ansible_preserves_password_as_literal_without_connecting_to_any_server(): void
+    {
+        if (! env('SAAS_ANSIBLE_TESTS')) {
+            $this->markTestSkipped('Requires Linux Ansible runtime in CI.');
+        }
+        [, $tenant] = $this->setupCustomer();
+        $this->requestInstall($tenant, $this->body())->assertAccepted();
+        $this->files[] = tempnam(sys_get_temp_dir(), 'ansible');
+        config(['saas.ansible_binary' => $this->files[0]]);
+        $playbook = tempnam(sys_get_temp_dir(), 'literal-');
+        rename($playbook, $playbook.'.yml');
+        $this->files[] = $playbook.'.yml';
+        file_put_contents($this->files[1], "- hosts: all\n  gather_facts: false\n  connection: local\n  become: false\n  tasks:\n    - ansible.builtin.assert:\n        that:\n          - ansible_password | b64encode == '".base64_encode(self::SSH_PASSWORD)."'\n          - ansible_become_password | b64encode == '".base64_encode(self::SSH_PASSWORD)."'\n");
+        $runs = 0;
+        Process::fake(function ($process) use (&$runs) {
+            $check = new NativeProcess(['ansible-playbook', '-i', $process->command[2], $this->files[1]]);
+            $check->setTimeout(30);
+            $check->run();
+            $this->assertTrue($check->isSuccessful(), $check->getOutput().$check->getErrorOutput());
+            $runs++;
+
+            return Process::result();
+        });
+
+        app(AnsibleInstaller::class)->install(Environment::where('tenant_id', $tenant->id)->firstOrFail());
+
+        $this->assertSame(1, $runs);
     }
 
     public function test_admin_creates_customer_and_new_owner_without_returning_or_granting_platform_credentials(): void

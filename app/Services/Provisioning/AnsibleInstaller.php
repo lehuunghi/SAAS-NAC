@@ -63,8 +63,13 @@ class AnsibleInstaller
             if ($environment->driver === 'ssh') {
                 $variables['ansible_ssh_common_args'] .= ' -o GlobalKnownHostsFile=/dev/null -o PubkeyAuthentication=no -o PreferredAuthentications=password,keyboard-interactive -o HostKeyAlgorithms=ssh-ed25519';
             }
-            $inventory = $this->temporaryFile($directory, $files, '.json');
-            file_put_contents($inventory, json_encode(['all' => ['hosts' => ['nac20' => $variables]]], JSON_THROW_ON_ERROR));
+            $inventory = $this->temporaryFile($directory, $files, '.yml');
+            $content = "all:\n  hosts:\n    nac20:\n";
+            foreach ($variables as $key => $value) {
+                $tag = in_array($key, ['ansible_password', 'ansible_become_password'], true) ? '!unsafe ' : '';
+                $content .= '      '.$key.': '.$tag.json_encode($value, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n";
+            }
+            file_put_contents($inventory, $content);
             $result = Process::timeout(2100)->env(['ANSIBLE_HOST_KEY_CHECKING' => 'True', 'ANSIBLE_NO_LOG' => 'True'])
                 ->run([config('saas.ansible_binary'), '-i', $inventory, base_path('infrastructure/ansible/install-nac20.yml')]);
             if (! $result->successful()) {
