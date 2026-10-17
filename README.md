@@ -84,4 +84,6 @@ ansible-playbook -i localhost, infrastructure/ansible/install-nac20.yml --syntax
 
 GitHub Actions chạy bộ kiểm thử với MySQL 8.4 và Redis thật, build Vue và kiểm tra cú pháp Ansible. Chạy tại máy không có MySQL/Redis có thể dùng SQLite cho test nhanh; hai kiểm tra tích hợp được bỏ qua và không thay thế CI.
 
+Production (`APP_ENV=production`) chặn mọi yêu cầu mô phỏng, kể cả tác vụ cũ và thử lại. Đối soát không tạo môi trường giả; khu admin ẩn lựa chọn mô phỏng. Với SSH do admin điều phối, dùng `PROVISIONING_DRIVER=manual`. Lệnh `php artisan saas:production-check --connections` kiểm tra cấu hình/kết nối và trả mã lỗi nếu còn thiếu; không in bí mật, không bật chế độ thật. Xem phần 16 của hướng dẫn cài đặt để phân biệt kiểm thử mã nguồn với nghiệm thu vận hành.
+
 Laravel skeleton giữ giấy phép MIT trong `LICENSE`. Bộ NAC20 là sản phẩm riêng có giấy phép của kho NAC; kho này không sao chép hoặc đổi giấy phép phần lõi đó.

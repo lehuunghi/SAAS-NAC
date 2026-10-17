@@ -78,7 +78,7 @@ class ProvisionEnvironment implements ShouldQueue
             });
             app(OperationLifecycle::class)->finish($operation, 'completed');
         } catch (Throwable $exception) {
-            $safeCodes = ['TENANT_INACTIVE', 'MEMBERSHIP_REVOKED', 'SUBSCRIPTION_INACTIVE', 'LIVE_DISABLED', 'UNKNOWN_DRIVER', 'MISSING_CONFIGURATION', 'INVALID_CONFIGURATION', 'RECONCILE_SERVER_BEFORE_RETRY', 'INVALID_SERVER_ADDRESS', 'INVALID_SSH_TARGET', 'INVALID_HOSTNAME', 'INVALID_ZONE', 'DNS_CONFLICT', 'ANSIBLE_FAILED', 'SSH_PREFLIGHT_FAILED'];
+            $safeCodes = ['TENANT_INACTIVE', 'MEMBERSHIP_REVOKED', 'SUBSCRIPTION_INACTIVE', 'LIVE_DISABLED', 'SIMULATION_DISABLED', 'UNKNOWN_DRIVER', 'MISSING_CONFIGURATION', 'INVALID_CONFIGURATION', 'RECONCILE_SERVER_BEFORE_RETRY', 'INVALID_SERVER_ADDRESS', 'INVALID_SSH_TARGET', 'INVALID_HOSTNAME', 'INVALID_ZONE', 'DNS_CONFLICT', 'ANSIBLE_FAILED', 'SSH_PREFLIGHT_FAILED'];
             if ($operation) {
                 app(OperationLifecycle::class)->finish($operation, 'failed', in_array($exception->getMessage(), $safeCodes, true) ? $exception->getMessage() : 'PROVISIONING_FAILED');
             }

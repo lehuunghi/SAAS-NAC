@@ -36,6 +36,7 @@ jobs:
           extensions: pdo_mysql, mbstring, intl
           coverage: none
       - run: composer install --no-interaction --prefer-dist
+      - run: composer validate --strict && composer audit
       - run: cp .env.example .env && php artisan key:generate
       - run: vendor/bin/pint --test
       - run: php artisan test
@@ -43,7 +44,7 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - run: npm ci && npm run build
+      - run: npm ci && npm audit && npm run build
       - run: pipx install ansible-core==2.19.3
       - run: ansible-playbook -i localhost, infrastructure/ansible/install-nac20.yml --syntax-check
       - run: ansible-playbook -i localhost, infrastructure/ansible/check-nac20-host.yml --syntax-check
@@ -73,6 +74,13 @@ jobs:
             const response = await fetch(new URL(asset).pathname.startsWith('/build/') ? 'http://127.0.0.1:8088' + new URL(asset).pathname : asset);
             if (!response.ok || response.headers.get('content-type')?.includes('text/html')) throw new Error('Asset not served: ' + asset);
           }
+          const origin = 'http://127.0.0.1:8088';
+          const catalog = await fetch(origin + '/saas/api/v1/catalog', {headers:{Accept:'application/json'}});
+          if (!catalog.ok || (await catalog.json()).plans.length !== 3) throw new Error('Catalog API failed');
+          const tenant = await fetch(origin + '/saas/api/v1/tenants', {headers:{Accept:'application/json'}});
+          if (tenant.status !== 401) throw new Error('Unauthenticated tenant access was not rejected');
+          const login = await fetch(origin + '/saas/api/v1/login', {method:'POST', headers:{Accept:'application/json', 'Content-Type':'application/json'}, body:'{}'});
+          if (login.status !== 419) throw new Error('Production CSRF protection failed');
           console.log('NAC20 HTTP and assets passed');
           JS
       - name: Stop CI stack

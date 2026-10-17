@@ -17,6 +17,7 @@ use App\Services\DeploymentService;
 use App\Services\OperationLifecycle;
 use App\Services\PasswordRecovery;
 use App\Services\Provisioning\AnsibleInstaller;
+use App\Services\Provisioning\SimulationProvisioner;
 use App\Services\Provisioning\SshProvisioner;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -276,7 +277,7 @@ class AdminController extends Controller
             $checks[$key] = (bool) config('saas.'.$key);
         }
 
-        return response()->json(['domain' => config('saas.domain'), 'live_enabled' => (bool) config('saas.provisioning_enabled'), 'ssh_enabled' => (bool) config('saas.ssh_enabled'), 'default_driver' => config('saas.driver'), 'password_recovery_enabled' => app(PasswordRecovery::class)->available(), 'checks' => $checks, 'release_url' => config('saas.artifact_url'), 'release_sha256' => config('saas.artifact_sha256'), 'bank_configured' => (bool) (config('commerce.bank.enabled') && config('commerce.bank.name') && config('commerce.bank.account_number') && config('commerce.bank.account_holder'))]);
+        return response()->json(['domain' => config('saas.domain'), 'live_enabled' => (bool) config('saas.provisioning_enabled'), 'ssh_enabled' => (bool) config('saas.ssh_enabled'), 'default_driver' => config('saas.driver'), 'simulation_enabled' => SimulationProvisioner::enabled(), 'password_recovery_enabled' => app(PasswordRecovery::class)->available(), 'checks' => $checks, 'release_url' => config('saas.artifact_url'), 'release_sha256' => config('saas.artifact_sha256'), 'bank_configured' => (bool) (config('commerce.bank.enabled') && config('commerce.bank.name') && config('commerce.bank.account_number') && config('commerce.bank.account_holder'))]);
     }
 
     public function auditLog(): JsonResponse

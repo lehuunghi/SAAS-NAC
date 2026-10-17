@@ -12,10 +12,19 @@ use App\Models\User;
 use App\Services\CommerceService;
 use App\Services\DeploymentService;
 use App\Services\OperationLifecycle;
+use App\Services\ProductionReadiness;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schedule;
+
+Artisan::command('saas:production-check {--connections : Kiểm tra kết nối MySQL và Redis}', function (): int {
+    $checks = app(ProductionReadiness::class)->checks((bool) $this->option('connections'));
+    $this->table(['Kiểm tra', 'Kết quả'], collect($checks)->map(fn (array $check): array => [$check['label'], $check['passed'] ? 'ĐẠT' : 'CHƯA ĐẠT'])->all());
+    $this->warn('Đây là kiểm tra cấu hình/kết nối, không thay thế nghiệm thu VPS, SMTP, DNS, TLS, Connector, RADIUS/MAB và sao lưu/khôi phục thực tế. Không thay đổi cấu hình hoặc tạo máy chủ.');
+
+    return collect($checks)->every(fn (array $check): bool => $check['passed']) ? 0 : 1;
+})->purpose('Kiểm tra điều kiện cấu hình production, không in bí mật hoặc bật triển khai');
 
 Artisan::command('saas:company {slug} {name} {email}', function () {
     $slug = $this->argument('slug');

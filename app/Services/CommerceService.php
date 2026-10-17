@@ -11,6 +11,7 @@ use App\Models\Payment;
 use App\Models\QuoteRequest;
 use App\Models\ServiceSubscription;
 use App\Models\Tenant;
+use App\Services\Provisioning\SimulationProvisioner;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -65,7 +66,8 @@ class CommerceService
             ]);
             $order->update(['status' => 'paid', 'paid_at' => now()]);
             $this->audit($tenant->id, $actorId ? 'payment.verified_by_admin' : 'payment.verified_by_console', $order->id, $actorId);
-            if (! $deferInstallation && in_array(config('saas.driver'), ['simulation', 'hetzner'], true) && ! Environment::where('tenant_id', $tenant->id)->exists() && (config('saas.driver') === 'simulation' || config('saas.provisioning_enabled'))) {
+            if (! $deferInstallation && in_array(config('saas.driver'), ['simulation', 'hetzner'], true) && ! Environment::where('tenant_id', $tenant->id)->exists()
+                && (config('saas.driver') === 'simulation' ? SimulationProvisioner::enabled() : config('saas.provisioning_enabled'))) {
                 $owner = $tenant->members()->wherePivot('role', 'owner')->first();
                 if ($owner) {
                     $environment = Environment::create(['tenant_id' => $tenant->id, 'hostname' => $tenant->slug.'.'.config('saas.domain'), 'driver' => config('saas.driver')]);

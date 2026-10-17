@@ -9,6 +9,7 @@ use App\Models\Operation;
 use App\Models\ServiceSubscription;
 use App\Models\Site;
 use App\Models\Tenant;
+use App\Services\Provisioning\SimulationProvisioner;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -31,6 +32,7 @@ class TenantController extends Controller
         return response()->json([
             'tenant' => $tenant,
             'can_manage' => Gate::allows('manage', $tenant),
+            'can_request_environment' => config('saas.driver') === 'simulation' ? SimulationProvisioner::enabled() : (config('saas.driver') === 'hetzner' && config('saas.provisioning_enabled')),
             'sites' => Site::where('tenant_id', $tenant->id)->orderBy('id')->limit(100)->get(),
             'environments' => Environment::where('tenant_id', $tenant->id)->get(),
             'operations' => Operation::where('tenant_id', $tenant->id)->latest('id')->limit(20)->get(),
@@ -73,6 +75,7 @@ class TenantController extends Controller
                 return $existing;
             }
             abort_if(Environment::where('tenant_id', $tenant->id)->exists(), 409, 'Công ty đã có môi trường.');
+            abort_if(config('saas.driver') === 'simulation' && ! SimulationProvisioner::enabled(), 409, 'Không cho phép mô phỏng trên hệ thống production.');
             abort_unless(in_array(config('saas.driver'), ['simulation', 'hetzner'], true), 409, 'Cài SSH trên máy có sẵn phải do admin TN20 thực hiện.');
             abort_unless(config('saas.provisioning_enabled') || config('saas.driver') === 'simulation', 409, 'TN20 chưa bật cấp phát thực tế.');
             if (config('saas.driver') !== 'simulation') {

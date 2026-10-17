@@ -16,7 +16,7 @@ cp .env.example .env
 chmod 600 .env
 ```
 
-Điền `DB_PASSWORD` và thêm `MYSQL_ROOT_PASSWORD` bằng hai mật khẩu ngẫu nhiên riêng. Không dùng tài khoản DB root cho Laravel. Giữ `PROVISIONING_DRIVER=simulation`, `PROVISIONING_ENABLED=false` trong lần cài đầu.
+Điền `DB_PASSWORD` và thêm `MYSQL_ROOT_PASSWORD` bằng hai mật khẩu ngẫu nhiên riêng. Không dùng tài khoản DB root cho Laravel. Giữ `PROVISIONING_ENABLED=false` trong lần cài đầu. Mô phỏng chỉ hoạt động trong môi trường phát triển/kiểm thử; container có `APP_ENV=production` không chạy mô phỏng, kể cả còn cấu hình `PROVISIONING_DRIVER=simulation`. Với cài đặt SSH do admin quản lý, chọn `PROVISIONING_DRIVER=manual`.
 
 Tạo `APP_KEY` bằng lệnh sau trên Linux có OpenSSL, rồi dán toàn bộ kết quả vào `.env`:
 
@@ -229,7 +229,7 @@ Luồng này dùng **máy chủ đã có**, không gọi API tạo VM Hetzner. M
 1. Dùng cổng HTTPS, `APP_DEBUG=false`, `APP_KEY` ổn định và lưu bản sao khóa tại nơi quản trị an toàn. Mật khẩu SSH được mã hóa bằng khóa ứng dụng; thay/mất khóa sẽ ảnh hưởng việc giải mã các tác vụ đang chờ và sao lưu DB còn giữ mật khẩu mã hóa.
 2. Cấu hình Redis worker, scheduler, URL/SHA-256 bộ cài như các bước trên. Image app mới có Ansible và `sshpass`; cần dựng lại image khi nâng cấp.
 3. Khai báo `NAC_DOMAIN`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID` của vùng DNS TN20. Luồng SSH cũng tự tạo bản ghi A dạng DNS-only; không ghi đè bản ghi xung đột. Không cần token Hetzner, khóa SSH riêng hoặc file known_hosts chung cho luồng mật khẩu này.
-4. Đặt `PROVISIONING_ENABLED=true`, `SSH_INSTALL_ENABLED=true`. Giữ `PROVISIONING_DRIVER=simulation` hoặc `hetzner` cho luồng tự cấp máy khác; không đặt mặc định `ssh`, vì thông tin máy có sẵn chỉ do admin nhập cho từng khách.
+4. Sau khi đã chuẩn bị và nghiệm thu hạ tầng, đặt `PROVISIONING_ENABLED=true`, `SSH_INSTALL_ENABLED=true`, `PROVISIONING_DRIVER=manual` cho cài SSH do admin quản lý; chọn `hetzner` nếu dùng cấp VM tự động. Không đặt mặc định `ssh`, vì thông tin máy có sẵn chỉ do admin nhập cho từng khách. Production chặn hoàn toàn driver mô phỏng.
 5. Cập nhật và khởi động lại:
 
 ```bash
@@ -332,3 +332,45 @@ Khu admin **Cấu hình** hiển thị việc đã bật cấu hình khôi phụ
 Email chỉ trỏ đến `APP_URL` tin cậy. Token nằm trong phần fragment của liên kết, được xóa khỏi thanh địa chỉ khi mở giao diện và không lưu localStorage; DB chỉ lưu giá trị đã băm. API không trả token, không báo email tồn tại hay chưa; giới hạn 3 yêu cầu/email/giờ và 10 yêu cầu/IP/giờ, đặt lại tối đa 5 lượt/IP/phút. Lỗi SMTP vẫn trả phản hồi chung để tránh lộ tài khoản, nhật ký chỉ ghi cảnh báo chung không kèm thư/token. Vận hành cần theo dõi cảnh báo và thử gửi thực tế trước khi công bố dịch vụ. Scheduler dọn token hết hạn hằng ngày.
 
 Chức năng không sử dụng mailer ghi log, bộ nhớ hoặc failover để tránh ghi liên kết bí mật vào nhật ký. Chưa có MFA/xác minh email và chưa thử gửi SMTP thật trong môi trường phát triển này.
+
+## 16. Kiểm thử trước khi chuyển sang vận hành thật
+
+Kiểm thử mã nguồn và kiểm tra cấu hình không thay thế nghiệm thu hạ tầng. Không đổi tên bản preview thành bản ổn định, không đổi dữ liệu `simulated` thành `ready`, không xóa dữ liệu thử trên một database đang dùng chung để tạo cảm giác đã chạy thật.
+
+### Phạm vi kiểm thử tự động
+
+| Quy trình | Kiểm tra |
+|---|---|
+| Tài khoản | Đăng nhập/đăng xuất, khóa tài khoản, đổi mật khẩu ban đầu, thu hồi phiên, khôi phục một lần/hết hạn |
+| Phân quyền | Cách ly công ty, vai trò owner/admin/operator/viewer, thu hồi quyền, khóa ngoại và chỉ mục tenant |
+| Mua bán | Yêu cầu báo giá → phát hành → chấp nhận → báo chuyển khoản → admin đối soát → kích hoạt thuê bao |
+| Giao dịch lặp/sai | Đúng số tiền, tham chiếu duy nhất, không cộng thuê bao/tạo máy trùng, gia hạn, hủy/hết hạn |
+| Cài đặt | Xác nhận mật khẩu admin, kiểm tra SSH/tài nguyên trước DNS, giữ bí mật, hủy/thử lại, worker mất kết nối |
+| Bàn giao/hỗ trợ | Chờ nghiệm thu sau cài, điều kiện bàn giao, phản hồi hỗ trợ và thông báo theo từng người |
+| Production | Từ chối mô phỏng qua API/admin/đối soát/worker/thử lại, CSRF và cờ cookie bảo mật |
+| Đóng gói | Build Vue, kiểm tra cú pháp Ansible, MySQL/Redis thật trong CI, Docker migrate/HTTP/assets/API/CSRF, audit phụ thuộc |
+
+Bài kiểm thử tổng hợp dùng database riêng và giả lập API DNS/tiến trình Ansible; không chuyển tiền, không SSH vào IP trong dữ liệu kiểm thử và không tạo VPS. Bài Redis và MySQL trong CI kiểm tra dịch vụ thật, nhưng không chứng minh NAC20 đã xác thực MAC thành công trên switch của khách.
+
+### Kiểm tra cấu hình trên worker thật
+
+```bash
+docker compose exec worker php artisan saas:production-check --connections
+```
+
+Lệnh chỉ đọc cấu hình, schema MySQL và PING các kết nối Redis; không gửi thư, không tạo DNS/VM, không cài NAC20 và không hiển thị mật khẩu/token. Mã thoát `1` nghĩa là còn điều kiện chưa đạt. Không có `--connections` thì chỉ kiểm tra cấu hình và file, không xác nhận kết nối. Ngay cả mã `0` cũng chưa thay thế các nghiệm thu bên dưới.
+
+Chuẩn bị database MySQL production riêng, InnoDB/utf8mb4, không chép database SQLite xem thử hoặc tài khoản thử sang production. Cấu hình Redis cho session/cache/queue, `SESSION_SECURE_COOKIE=true`, `SESSION_ENCRYPT=true`, `APP_DEBUG=false`, `APP_URL` HTTPS tin cậy. Với SSH theo từng máy, dùng `PROVISIONING_DRIVER=manual`; với tự tạo VM, dùng `hetzner` và đầy đủ thông tin provider. Chỉ bật công tắc triển khai khi hạ tầng đã được chuẩn bị cho nghiệm thu.
+
+Production không cho phép mô phỏng: ẩn lựa chọn ở admin, từ chối ở backend, không tự tạo môi trường giả sau đối soát. Tác vụ mô phỏng còn trong hàng đợi bị chuyển lỗi `SIMULATION_DISABLED`, không thực hiện giả và không được thử lại trên production. Lịch sử thử không tự bị xóa. Kiểm tra database cũng báo chưa đạt nếu còn môi trường mô phỏng.
+
+### Các nghiệm thu thực tế bắt buộc trước khi bán dịch vụ chính thức
+
+1. Chốt bộ NAC20 được nghiệm thu và URL/SHA-256 tương ứng. Bản phát hành hiện có `nac20-16.0.0-preview.1` là prerelease; không coi là bản ổn định chỉ vì build thành công.
+2. Dùng một VPS Debian 12 riêng của TN20, xác minh host key từ console, kiểm tra SSH/root hoặc sudo, cài thành công và ghi lại biên bản. Không dùng máy đang chứa dữ liệu quan trọng để diễn tập.
+3. Xác minh DNS đúng vùng của TN20 và TLS tin cậy; hoàn tất trình cấu hình NAC20. Cấu hình Connector tại công ty và xác thực MAC/RADIUS/MAB với switch/Wi-Fi thật. Thử hai công ty có cùng MAC/IP để chứng minh cách ly.
+4. Thử gửi/nhận thư SMTP thật, đặt lại mật khẩu và từ chối liên kết cũ. Kiểm tra thông tin ngân hàng do TN20 cung cấp; thử đối soát với một giao dịch được TN20 xác minh, không dùng tham chiếu giả của kiểm thử.
+5. Diễn tập sao lưu/khôi phục database, cấu hình NAC20 và khóa ứng dụng; xác minh worker/scheduler đang chạy, giám sát lỗi, thông báo và quy trình phục hồi tác vụ bị gián đoạn.
+6. Chỉ ghi nhận bàn giao sau nghiệm thu thực tế. Giữ bằng chứng và phương án quay lui; hệ thống không tự đánh dấu các tiêu chí này chỉ dựa trên CI hoặc checkbox được điền trong kiểm thử.
+
+Kiểm tra môi trường phát triển ngày 17/10/2026: vẫn dùng SQLite, queue database, mail log và driver simulation; chưa khai báo DNS/provider/ngân hàng/bộ cài cho runtime, chưa có VPS để nghiệm thu. Vì vậy môi trường này chưa được chuyển sang vận hành thật. Không có VPS, DNS hoặc giao dịch thanh toán thật nào được tạo trong đợt kiểm thử.

@@ -9,6 +9,7 @@ use App\Models\Operation;
 use App\Models\ServiceSubscription;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Services\Provisioning\SimulationProvisioner;
 use App\Services\Provisioning\SshProvisioner;
 use Illuminate\Support\Facades\DB;
 
@@ -18,6 +19,7 @@ class DeploymentService
     {
         abort_unless($actor->is_active && $actor->is_platform_admin, 403);
         abort_unless(in_array($driver, ['simulation', 'hetzner', 'ssh'], true), 422);
+        abort_if($driver === 'simulation' && ! SimulationProvisioner::enabled(), 409, 'Không cho phép mô phỏng trên hệ thống production.');
         $target = $driver === 'ssh' ? SshProvisioner::validateTarget($ssh) : [];
 
         return DB::transaction(function () use ($tenant, $actor, $key, $driver, $notes, $target) {
@@ -57,6 +59,7 @@ class DeploymentService
             $tenant = Tenant::whereKey($operation->tenant_id)->lockForUpdate()->firstOrFail();
             $operation->refresh();
             $environment = Environment::where('tenant_id', $operation->tenant_id)->findOrFail($operation->environment_id);
+            abort_if($environment->driver === 'simulation' && ! SimulationProvisioner::enabled(), 409, 'Không thử lại mô phỏng trên hệ thống production.');
             abort_unless(in_array($operation->status, ['failed', 'cancelled'], true) && in_array($environment->status, ['failed', 'cancelled'], true), 409, 'Chỉ thử lại tác vụ lỗi hoặc đã hủy.');
             abort_unless($tenant->status === 'active', 409, 'Khách hàng đang tạm ngưng.');
             $neverStarted = $operation->status === 'cancelled' && ! $operation->started_at;
