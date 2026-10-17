@@ -102,7 +102,9 @@ class PasswordRecoveryTest extends TestCase
         $this->assertTrue($user->is_active);
         $this->assertNotSame($oldRemember, $user->remember_token);
         $this->assertDatabaseCount('password_reset_tokens', 0);
-        $this->assertDatabaseHas('admin_audit_events', ['user_id' => $user->id, 'action' => 'account.password_reset', 'details' => '{}']);
+        $this->assertDatabaseHas('admin_audit_events', ['user_id' => $user->id, 'action' => 'account.password_reset']);
+        $details = DB::table('admin_audit_events')->where('user_id', $user->id)->where('action', 'account.password_reset')->value('details');
+        $this->assertSame([], json_decode($details, true, 512, JSON_THROW_ON_ERROR));
         $this->postJson('/saas/api/v1/reset-password', $body)->assertUnprocessable()->assertJsonValidationErrors('token');
         $this->actingAs($user)->withSession(['password_hash_web' => Auth::guard('web')->hashPasswordForCookie($oldHash)])
             ->getJson('/saas/api/v1/me')->assertUnauthorized();
