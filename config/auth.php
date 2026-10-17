@@ -3,6 +3,7 @@
 use App\Models\User;
 
 return [
+    'password_recovery_enabled' => env('PASSWORD_RECOVERY_ENABLED', false),
 
     /*
     |--------------------------------------------------------------------------

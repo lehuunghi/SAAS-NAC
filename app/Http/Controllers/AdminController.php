@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Services\CommerceService;
 use App\Services\DeploymentService;
 use App\Services\OperationLifecycle;
+use App\Services\PasswordRecovery;
 use App\Services\Provisioning\AnsibleInstaller;
 use App\Services\Provisioning\SshProvisioner;
 use Illuminate\Http\JsonResponse;
@@ -76,6 +77,9 @@ class AdminController extends Controller
             $owner = $request->boolean('create_owner')
                 ? User::create(['name' => $data['owner_name'], 'email' => $data['owner_email'], 'password' => $data['owner_password']])
                 : User::where('email', $data['owner_email'])->where('is_active', true)->firstOrFail();
+            if ($request->boolean('create_owner')) {
+                $owner->forceFill(['must_change_password' => true])->save();
+            }
             $tenant = Tenant::create(['name' => $data['name'], 'slug' => $data['slug']]);
             $tenant->members()->attach($owner->id, ['role' => 'owner']);
             $this->audit($request, 'customer.created', $tenant->id, $tenant->id);
@@ -272,7 +276,7 @@ class AdminController extends Controller
             $checks[$key] = (bool) config('saas.'.$key);
         }
 
-        return response()->json(['domain' => config('saas.domain'), 'live_enabled' => (bool) config('saas.provisioning_enabled'), 'ssh_enabled' => (bool) config('saas.ssh_enabled'), 'default_driver' => config('saas.driver'), 'checks' => $checks, 'release_url' => config('saas.artifact_url'), 'release_sha256' => config('saas.artifact_sha256'), 'bank_configured' => (bool) (config('commerce.bank.enabled') && config('commerce.bank.name') && config('commerce.bank.account_number') && config('commerce.bank.account_holder'))]);
+        return response()->json(['domain' => config('saas.domain'), 'live_enabled' => (bool) config('saas.provisioning_enabled'), 'ssh_enabled' => (bool) config('saas.ssh_enabled'), 'default_driver' => config('saas.driver'), 'password_recovery_enabled' => app(PasswordRecovery::class)->available(), 'checks' => $checks, 'release_url' => config('saas.artifact_url'), 'release_sha256' => config('saas.artifact_sha256'), 'bank_configured' => (bool) (config('commerce.bank.enabled') && config('commerce.bank.name') && config('commerce.bank.account_number') && config('commerce.bank.account_holder'))]);
     }
 
     public function auditLog(): JsonResponse

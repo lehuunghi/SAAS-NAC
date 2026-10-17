@@ -40,7 +40,7 @@ class AuthController extends Controller
         ]);
 
         DB::transaction(function () use ($request, $data): void {
-            $request->user()->forceFill(['password' => $data['password'], 'remember_token' => Str::random(60)])->save();
+            $request->user()->forceFill(['password' => $data['password'], 'remember_token' => Str::random(60), 'must_change_password' => false])->save();
             if ($request->user()->is_platform_admin) {
                 DB::table('admin_audit_events')->insert([
                     'user_id' => $request->user()->id, 'tenant_id' => null,

@@ -39,6 +39,9 @@ Artisan::command('saas:company {slug} {name} {email}', function () {
     }
     DB::transaction(function () use ($user, $email, $password, $slug) {
         $owner = $user ?? User::create(['name' => $this->argument('name'), 'email' => $email, 'password' => Hash::make($password)]);
+        if (! $user) {
+            $owner->forceFill(['must_change_password' => true])->save();
+        }
         $tenant = Tenant::create(['name' => $this->argument('name'), 'slug' => $slug]);
         $tenant->members()->attach($owner->id, ['role' => 'owner']);
     });
@@ -109,6 +112,7 @@ Artisan::command('saas:recover-stale', function () {
     $this->info('Đã chuyển '.$count.' tác vụ quá hạn sang lỗi cần đối soát; không tự chạy lại.');
 })->purpose('Đối soát tác vụ running quá 50 phút khi khóa worker đã hết');
 Schedule::command('saas:recover-stale')->everyMinute()->withoutOverlapping();
+Schedule::command('auth:clear-resets')->daily()->withoutOverlapping();
 
 Artisan::command('saas:admin {email} {--revoke}', function () {
     $user = User::where('email', strtolower($this->argument('email')))->firstOrFail();

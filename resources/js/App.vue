@@ -6,6 +6,7 @@ import AdminPanel from './AdminPanel.vue';
 import AccountPanel from './AccountPanel.vue';
 import SecurityPanel from './SecurityPanel.vue';
 import NotificationsPanel from './NotificationsPanel.vue';
+import PasswordRecoveryPanel from './PasswordRecoveryPanel.vue';
 
 const user = ref(null), companies = ref([]), selected = ref(''), data = ref(null);
 const page = ref('overview'), error = ref(''), busy = ref(false), loading = ref(true);
@@ -14,6 +15,7 @@ const adminPage = ref(location.pathname === '/admin');
 const authView = ref(location.hash === '#dang-nhap' || adminPage.value), registerMode = ref(false), registrationEnabled = ref(false);
 const fullName = ref(''), companyName = ref(''), confirmPassword = ref('');
 const publicPage = ref(location.pathname === '/san-pham');
+const recoveryPage = location.pathname === '/khoi-phuc-mat-khau';
 let timer, generation = 0;
 const labels = { cancelled:'Đã hủy', checking_ssh_target:'Kiểm tra thông tin máy', checking_ssh_connection:'Kiểm tra kết nối SSH và tài nguyên', configuring_dns:'Cấu hình DNS', installing_packages:'Cài bộ NAC20', installation_simulated:'Đã mô phỏng cài đặt',  requested: 'Đã yêu cầu', queued: 'Đang chờ', running: 'Đang thực hiện', provisioning: 'Đang cấp phát', simulated: 'Đã mô phỏng', completed: 'Hoàn tất tác vụ', failed: 'Cần xử lý', awaiting_configuration: 'Chờ cấu hình NAC20', ready: 'Đã được TN20 nghiệm thu / bàn giao' };
 const stateLabel = value => labels[value] || value;
@@ -25,6 +27,7 @@ async function api(path, options = {}) {
     const body = response.status === 204 ? null : await response.json();
     if (!response.ok) {
         if (response.status === 401) { user.value = null; data.value = null; }
+        if (body?.code === 'password_change_required' && user.value) { user.value.must_change_password = true; data.value = null; }
         throw new Error(Object.values(body?.errors || {}).flat()[0] || body?.message || 'Yêu cầu không thành công.');
     }
     return body;
@@ -48,6 +51,7 @@ async function login() {
     catch (e) { error.value = e.message; } finally { password.value = ''; busy.value = false; }
 }
 async function logout() { try { await api('logout', { method: 'POST' }); location.reload(); } catch (e) { error.value = e.message; } }
+function passwordChanged() { location.reload(); }
 async function createSite() {
     busy.value = true; error.value = '';
     try { await api(`tenants/${selected.value}/sites`, { method: 'POST', body: JSON.stringify({ name: siteName.value, code: siteCode.value }) }); siteName.value = ''; siteCode.value = ''; await refresh(); }
@@ -59,20 +63,23 @@ async function provision() {
     catch (e) { error.value = e.message; } finally { busy.value = false; }
 }
 onMounted(async () => {
-    try { const catalog = await api('catalog'); registrationEnabled.value = catalog.registration_enabled; user.value = await api('me'); companies.value = await api('tenants'); if (companies.value.length) await selectCompany(companies.value[0].id); if (location.hash.startsWith('#devis')) page.value = 'quotes'; }
+    if (recoveryPage) { loading.value = false; return; }
+    try { const catalog = await api('catalog'); registrationEnabled.value = catalog.registration_enabled; user.value = await api('me'); if (user.value.must_change_password) return; companies.value = await api('tenants'); if (companies.value.length) await selectCompany(companies.value[0].id); if (location.hash.startsWith('#devis')) page.value = 'quotes'; }
     catch (e) { if (user.value) error.value = e.message; } finally { loading.value = false; }
-    timer = setInterval(() => { if (user.value && !busy.value) refresh(); }, 6000);
+    timer = setInterval(() => { if (user.value && !user.value.must_change_password && !busy.value) refresh(); }, 6000);
 });
 onUnmounted(() => clearInterval(timer));
 </script>
 
 <template>
     <div v-if="loading" class="boot" role="status">Đang mở không gian NAC20…</div>
+    <PasswordRecoveryPanel v-else-if="recoveryPage" :api="api" />
+    <main v-else-if="user?.must_change_password" class="content password-gate"><div class="page-heading"><a class="brand" href="/">NAC<span>20</span><small>CLOUD</small></a><button class="text-button" @click="logout">Đăng xuất</button></div><p v-if="error" class="error" role="alert">{{error}}</p><SecurityPanel :api="api" forced @changed="passwordChanged" /></main>
     <template v-else-if="adminPage && user"><AdminPanel v-if="user.is_platform_admin" :user="user" :api="api" @logout="logout"/><main v-else class="content"><section class="panel"><h1>Khu quản trị TN20</h1><p class="notice">Tài khoản hiện tại không có quyền quản trị nền tảng.</p><a class="primary" href="/">Về khu khách hàng</a><button class="text-button" @click="logout">Đăng xuất</button></section></main></template>
     <PublicSite v-else-if="publicPage || (!user && !authView)" :authenticated="!!user" @login="publicPage=false; authView=true; registerMode=false" @register="publicPage=false; authView=true; registerMode=true" />
     <main v-else-if="!user" class="login-layout">
         <section class="login-story"><a class="brand" href="/">NAC<span>20</span><small>CLOUD</small></a><div><p class="eyebrow">HẠ TẦNG TẬP TRUNG · KIỂM SOÁT ĐỘC LẬP</p><h1>Mọi chi nhánh.<br>Một không gian<br><em>điều hành.</em></h1><p>Quản lý môi trường NAC20 của doanh nghiệp trên nền tảng dịch vụ của TN20.</p><div class="story-grid"><span>Môi trường riêng</span><span>Quyền theo công ty</span><span>Kết nối Connector</span></div></div><footer>Công Ty TNHH TN20 · 20.com.vn</footer></section>
-        <section class="login-panel"><form @submit.prevent="login"><p class="eyebrow">NAC20 CLOUD · TN20</p><h2>{{ adminPage ? 'Đăng nhập quản trị TN20' : registerMode ? 'Tạo tài khoản tư vấn' : 'Đăng nhập NAC20' }}</h2><p class="muted">{{ adminPage ? 'Dành cho tài khoản được TN20 cấp quyền quản trị nền tảng.' : registerMode ? 'Tạo không gian công ty để gửi nhu cầu và nhận báo giá riêng.' : 'Đăng nhập để theo dõi dịch vụ, đơn hàng và triển khai.' }}</p><template v-if="registerMode"><label for="full-name">Họ tên</label><input id="full-name" v-model="fullName" maxlength="100" autocomplete="name" required><label for="company-name">Tên công ty</label><input id="company-name" v-model="companyName" maxlength="150" autocomplete="organization" required></template><label for="email">Địa chỉ email</label><input id="email" v-model="email" type="email" autocomplete="username" required placeholder="ban@congty.vn"><label for="password">Mật khẩu</label><input id="password" v-model="password" type="password" :autocomplete="registerMode ? 'new-password' : 'current-password'" :minlength="registerMode ? 12 : undefined" required><template v-if="registerMode"><label for="confirm-password">Nhập lại mật khẩu</label><input id="confirm-password" v-model="confirmPassword" type="password" autocomplete="new-password" required></template><p v-if="error" class="error" role="alert">{{ error }}</p><button class="primary" :disabled="busy">{{ busy ? 'Đang xử lý…' : registerMode ? 'Tạo tài khoản →' : 'Vào không gian quản trị →' }}</button><button v-if="registrationEnabled && !adminPage" type="button" class="text-button" @click="registerMode=!registerMode; error=''">{{ registerMode ? 'Đã có tài khoản? Đăng nhập' : 'Chưa có tài khoản? Đăng ký tư vấn' }}</button><a class="back-product" href="/san-pham">← Giới thiệu sản phẩm</a><a v-if="adminPage" class="back-product" href="/#dang-nhap">Đăng nhập dành cho khách hàng →</a><p v-else class="fine">Tạo tài khoản chưa thu phí hoặc tự cấp máy chủ.</p></form></section>
+        <section class="login-panel"><form @submit.prevent="login"><p class="eyebrow">NAC20 CLOUD · TN20</p><h2>{{ adminPage ? 'Đăng nhập quản trị TN20' : registerMode ? 'Tạo tài khoản tư vấn' : 'Đăng nhập NAC20' }}</h2><p class="muted">{{ adminPage ? 'Dành cho tài khoản được TN20 cấp quyền quản trị nền tảng.' : registerMode ? 'Tạo không gian công ty để gửi nhu cầu và nhận báo giá riêng.' : 'Đăng nhập để theo dõi dịch vụ, đơn hàng và triển khai.' }}</p><template v-if="registerMode"><label for="full-name">Họ tên</label><input id="full-name" v-model="fullName" maxlength="100" autocomplete="name" required><label for="company-name">Tên công ty</label><input id="company-name" v-model="companyName" maxlength="150" autocomplete="organization" required></template><label for="email">Địa chỉ email</label><input id="email" v-model="email" type="email" autocomplete="username" required placeholder="ban@congty.vn"><label for="password">Mật khẩu</label><input id="password" v-model="password" type="password" :autocomplete="registerMode ? 'new-password' : 'current-password'" :minlength="registerMode ? 12 : undefined" required><template v-if="registerMode"><label for="confirm-password">Nhập lại mật khẩu</label><input id="confirm-password" v-model="confirmPassword" type="password" autocomplete="new-password" required></template><p v-if="error" class="error" role="alert">{{ error }}</p><button class="primary" :disabled="busy">{{ busy ? 'Đang xử lý…' : registerMode ? 'Tạo tài khoản →' : 'Vào không gian quản trị →' }}</button><button v-if="registrationEnabled && !adminPage" type="button" class="text-button" @click="registerMode=!registerMode; error=''">{{ registerMode ? 'Đã có tài khoản? Đăng nhập' : 'Chưa có tài khoản? Đăng ký tư vấn' }}</button><a v-if="!registerMode" class="back-product" href="/khoi-phuc-mat-khau">Quên mật khẩu?</a><a class="back-product" href="/san-pham">← Giới thiệu sản phẩm</a><a v-if="adminPage" class="back-product" href="/#dang-nhap">Đăng nhập dành cho khách hàng →</a><p v-else class="fine">Tạo tài khoản chưa thu phí hoặc tự cấp máy chủ.</p></form></section>
     </main>
     <div v-else class="workspace">
         <aside class="sidebar"><a href="/" class="brand">NAC<span>20</span><small>CLOUD</small></a><div class="company-picker"><label for="company">KHÔNG GIAN CÔNG TY</label><select id="company" :value="selected" @change="selectCompany(Number($event.target.value))"><option v-for="company in companies" :key="company.id" :value="company.id">{{ company.name }}</option></select></div><nav aria-label="Điều hướng chính"><button v-for="item in navigation" :key="item[0]" :class="{ active: page === item[0] }" @click="page = item[0]"><span>{{ item[1] }}</span>{{ item[2] }}</button></nav><div class="sidebar-bottom"><span class="dot"></span> Công Ty TNHH TN20<p>20.com.vn</p></div></aside>
@@ -95,3 +102,8 @@ onUnmounted(() => clearInterval(timer));
         </div>
     </div>
 </template>
+
+<style scoped>
+.password-gate { max-width: 760px; margin: 32px auto; }
+.password-gate .brand { color: #102e3d; }
+</style>

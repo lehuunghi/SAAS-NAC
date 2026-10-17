@@ -297,3 +297,38 @@ Worker timeout bình thường có thể ghi `WORKER_INTERRUPTED` sớm hơn. C�
 **Thông báo:** admin TN20 và thành viên đang hoạt động của công ty nhận thông báo hoàn tất, lỗi hoặc hủy trong mục **Thông báo**. Mỗi người đánh dấu đã đọc riêng; nội dung không chứa mật khẩu hoặc stdout/stderr. Mất quyền công ty hoặc quyền admin thì không còn xem được thông báo vượt quyền, kể cả thông báo đã phát trước đó. Chỉ phát cho các kết quả mới sau khi nâng cấp, chưa nhập lại lịch sử cũ, chưa gửi email/SMS.
 
 Khi nâng cấp, chạy migration mới và khởi động lại worker/scheduler/app để dùng mã và schema đồng nhất. Job Redis cũ không mang số lần chạy được coi là lần đầu; các lần thử lại sau nâng cấp có số lần riêng. Tiếp tục giữ chế độ mô phỏng đến khi TN20 nghiệm thu VPS thật.
+
+## 15. Mật khẩu ban đầu và khôi phục tài khoản
+
+Tài khoản khách mới do admin tạo tại **Khách hàng → Tạo tài khoản mới cho chủ công ty**, hoặc tạo qua `saas:company`, phải đổi mật khẩu ban đầu ở lần đăng nhập đầu tiên. Backend chỉ cho phép xem tài khoản hiện tại, đổi mật khẩu và đăng xuất trong giai đoạn này; API công ty, thanh toán, cài đặt và quản trị đều bị chặn. Tài khoản tự đăng ký tự đặt mật khẩu và tài khoản đã tồn tại không bị tự chuyển sang chế độ bắt buộc đổi.
+
+Sau khi nâng cấp, chạy migration rồi khởi động lại ứng dụng. Khách dùng mật khẩu ban đầu TN20 đã bàn giao, đặt mật khẩu mới tối thiểu 12 ký tự và nhập lại để xác nhận. TN20 cần bàn giao mật khẩu qua kênh riêng, không ghi vào ghi chú triển khai hoặc ticket.
+
+Trang đăng nhập khách/admin có liên kết **Quên mật khẩu?**, mở `/khoi-phuc-mat-khau`. Chức năng mặc định chưa bật. Để vận hành thật, cấu hình trong `.env` trên máy SaaS, dùng thông tin SMTP do TN20 sở hữu:
+
+```dotenv
+APP_URL=https://TEN_MIEN_SAAS_CUA_TN20
+PASSWORD_RECOVERY_ENABLED=true
+MAIL_MAILER=smtp
+MAIL_HOST=TEN_MAY_CHU_SMTP
+MAIL_PORT=587
+MAIL_SCHEME=smtp
+MAIL_USERNAME=TAI_KHOAN_SMTP
+MAIL_PASSWORD=MAT_KHAU_SMTP
+MAIL_TIMEOUT=15
+MAIL_FROM_ADDRESS=noreply@20.com.vn
+MAIL_FROM_NAME="TN20"
+```
+
+Thay toàn bộ giá trị minh họa bằng giá trị thật. Chọn cổng/scheme theo dịch vụ thư: cổng 465 thường dùng `MAIL_SCHEME=smtps`; với STARTTLS trên 587 dùng `smtp` và bảo đảm máy chủ hỗ trợ TLS. Cấu hình SPF/DKIM/DMARC, địa chỉ gửi được cấp quyền và reverse proxy HTTPS; không lưu bí mật vào Git. Không dùng `MAIL_URL` ghi đè các thông số trên. Sau thay đổi:
+
+```bash
+docker compose up -d --force-recreate app worker scheduler
+docker compose exec app php artisan config:clear
+```
+
+Khu admin **Cấu hình** hiển thị việc đã bật cấu hình khôi phục; đây chưa phải kiểm tra SMTP gửi thành công. Thử bằng một tài khoản đang hoạt động của TN20: yêu cầu khôi phục, kiểm tra cả thư rác, mở liên kết trong 60 phút và đặt mật khẩu mới. Sau thành công phải đăng nhập lại; phiên cũ bị từ chối ở lần truy cập kế tiếp. Dùng lại liên kết hoặc dùng liên kết hết hạn phải bị từ chối. Tài khoản bị khóa không nhận thư và không thể dùng khôi phục để tự mở khóa.
+
+Email chỉ trỏ đến `APP_URL` tin cậy. Token nằm trong phần fragment của liên kết, được xóa khỏi thanh địa chỉ khi mở giao diện và không lưu localStorage; DB chỉ lưu giá trị đã băm. API không trả token, không báo email tồn tại hay chưa; giới hạn 3 yêu cầu/email/giờ và 10 yêu cầu/IP/giờ, đặt lại tối đa 5 lượt/IP/phút. Lỗi SMTP vẫn trả phản hồi chung để tránh lộ tài khoản, nhật ký chỉ ghi cảnh báo chung không kèm thư/token. Vận hành cần theo dõi cảnh báo và thử gửi thực tế trước khi công bố dịch vụ. Scheduler dọn token hết hạn hằng ngày.
+
+Chức năng không sử dụng mailer ghi log, bộ nhớ hoặc failover để tránh ghi liên kết bí mật vào nhật ký. Chưa có MFA/xác minh email và chưa thử gửi SMTP thật trong môi trường phát triển này.

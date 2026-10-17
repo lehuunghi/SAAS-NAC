@@ -49,7 +49,7 @@ Web lắng nghe `http://127.0.0.1:8088`; đặt reverse proxy HTTPS phía trư�
 
 ## Phần chưa cung cấp
 
-Thanh toán/webhook tự động, MFA/khôi phục mật khẩu, xác minh email, mời thành viên qua email, quản lý MAC qua cổng SaaS, SSO sang NAC, đăng ký Connector một lần, tự hoàn tất trình cấu hình NAC/TLS, backup/khôi phục tự động và HA. Các mục này không được coi là đã hoạt động chỉ vì có thiết kế. Chuyển khoản hiện đối soát thủ công, cần TN20 cấu hình thông tin ngân hàng thật trước khi tiếp nhận.
+Thanh toán/webhook tự động, MFA, xác minh email, mời thành viên qua email, quản lý MAC qua cổng SaaS, SSO sang NAC, đăng ký Connector một lần, tự hoàn tất trình cấu hình NAC/TLS, backup/khôi phục tự động và HA. Các mục này không được coi là đã hoạt động chỉ vì có thiết kế. Chuyển khoản hiện đối soát thủ công, cần TN20 cấu hình thông tin ngân hàng thật trước khi tiếp nhận.
 
 Chưa có thông tin nhà cung cấp hạ tầng/DNS của TN20. Hetzner và Cloudflare là adapter tùy chọn, có kiểm thử HTTP giả lập; không khẳng định đó là hạ tầng TN20 đang dùng. Không có máy thật, DNS hoặc giao dịch thanh toán nào được tạo bởi quá trình phát triển này.
 
@@ -69,7 +69,9 @@ Luồng SSH tự kiểm tra đăng nhập, quyền root/sudo, Debian 12, RAM/đ�
 
 Admin có thể tạo đồng thời công ty và tài khoản chủ công ty, sau đó chọn **Cài đặt cho khách → Máy chủ có sẵn — SSH bằng mật khẩu**. Thông tin máy riêng gồm IPv4 công khai, cổng, tài khoản, mật khẩu và khóa công khai Ed25519 của máy chủ. Mật khẩu được mã hóa, ẩn khỏi API và xóa khi cài thành công; trường hợp lỗi có chức năng thay/xóa. Cần bật triển khai, cấu hình DNS/worker và thuê bao hợp lệ; xem phần 13 của [hướng dẫn cài đặt](docs/CAI_DAT.md). Khi đối soát có thể chọn cài sau để không tự cấp môi trường trước khi chọn SSH.
 
-Cả hai khu quản trị có mục **Bảo mật tài khoản** để đổi mật khẩu (tối thiểu 12 ký tự, xác nhận mật khẩu hiện tại). Các phiên đã đăng nhập với mật khẩu cũ bị từ chối ở yêu cầu kế tiếp; phiên đang đổi được giữ lại và thay mã phiên/CSRF. Admin đổi mật khẩu được ghi vào nhật ký, không lưu mật khẩu trong nhật ký. Khôi phục qua email và MFA chưa được cung cấp.
+Cả hai khu quản trị có mục **Bảo mật tài khoản** để đổi mật khẩu (tối thiểu 12 ký tự, xác nhận mật khẩu hiện tại). Tài khoản mới do admin/console cấp bắt buộc đổi mật khẩu ban đầu; backend chặn API nghiệp vụ cho đến khi hoàn tất. Các phiên đã đăng nhập với mật khẩu cũ bị từ chối ở yêu cầu kế tiếp; phiên đang đổi được giữ lại và thay mã phiên/CSRF. Admin đổi/khôi phục mật khẩu được ghi vào nhật ký, không lưu mật khẩu trong nhật ký.
+
+**Quên mật khẩu** dùng liên kết email một lần, hết hạn sau 60 phút; không mở khóa tài khoản bị khóa. Mặc định tắt, chỉ bật khi đã cấu hình SMTP và `APP_URL` HTTPS; không gửi token vào mailer `log`/`array`/`failover`. Xem phần 15 của [hướng dẫn cài đặt](docs/CAI_DAT.md). Chưa nghiệm thu gửi thư thật; MFA vẫn chưa được cung cấp.
 
 ```bash
 composer install

@@ -5,22 +5,28 @@ use App\Http\Controllers\AdminController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CommerceController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\PasswordRecoveryController;
 use App\Http\Controllers\TenantController;
 use App\Http\Middleware\EnsureAccountActive;
+use App\Http\Middleware\EnsurePasswordChanged;
 use App\Http\Middleware\EnsurePlatformAdmin;
 use Illuminate\Support\Facades\Route;
 
 Route::view('/', 'app')->name('login');
 Route::view('/san-pham', 'app');
 Route::view('/admin', 'app');
+Route::get('/khoi-phuc-mat-khau', fn () => response()->view('app')->header('Cache-Control', 'no-store')->header('Referrer-Policy', 'no-referrer'));
 Route::prefix('saas/api/v1')->group(function () {
     Route::get('catalog', [CommerceController::class, 'catalog']);
     Route::post('register', [CommerceController::class, 'register'])->middleware('throttle:registration');
     Route::post('login', [AuthController::class, 'login'])->middleware('throttle:login');
-    Route::middleware(['auth', EnsureAccountActive::class, 'auth.session'])->group(function () {
-        Route::post('logout', [AuthController::class, 'logout']);
-        Route::post('password', [AuthController::class, 'password'])->middleware('throttle:account-security');
-        Route::get('me', fn () => ['id' => auth()->id(), 'name' => auth()->user()->name, 'email' => auth()->user()->email, 'is_platform_admin' => auth()->user()->is_platform_admin]);
+    Route::get('auth-options', [PasswordRecoveryController::class, 'options']);
+    Route::post('forgot-password', [PasswordRecoveryController::class, 'send'])->middleware('throttle:password-recovery');
+    Route::post('reset-password', [PasswordRecoveryController::class, 'reset'])->middleware('throttle:password-reset');
+    Route::middleware(['auth', EnsureAccountActive::class, 'auth.session', EnsurePasswordChanged::class])->group(function () {
+        Route::post('logout', [AuthController::class, 'logout'])->name('account.logout');
+        Route::post('password', [AuthController::class, 'password'])->middleware('throttle:account-security')->name('account.password');
+        Route::get('me', fn () => ['id' => auth()->id(), 'name' => auth()->user()->name, 'email' => auth()->user()->email, 'is_platform_admin' => auth()->user()->is_platform_admin, 'must_change_password' => auth()->user()->fresh()->must_change_password])->name('account.me');
         Route::post('profile', [AccountController::class, 'profile']);
         Route::get('notifications', [NotificationController::class, 'index']);
         Route::post('notifications/{notification}/read', [NotificationController::class, 'read'])->middleware('throttle:tenant-orders');
