@@ -374,3 +374,11 @@ Production không cho phép mô phỏng: ẩn lựa chọn ở admin, từ chố
 6. Chỉ ghi nhận bàn giao sau nghiệm thu thực tế. Giữ bằng chứng và phương án quay lui; hệ thống không tự đánh dấu các tiêu chí này chỉ dựa trên CI hoặc checkbox được điền trong kiểm thử.
 
 Kiểm tra môi trường phát triển ngày 17/10/2026: vẫn dùng SQLite, queue database, mail log và driver simulation; chưa khai báo DNS/provider/ngân hàng/bộ cài cho runtime, chưa có VPS để nghiệm thu. Vì vậy môi trường này chưa được chuyển sang vận hành thật. Không có VPS, DNS hoặc giao dịch thanh toán thật nào được tạo trong đợt kiểm thử.
+
+### Tên miền SaaS nac20.com
+
+TN20 đã chọn `nac20.com` cho SaaS. Mẫu `.env.production.example` chuẩn bị `APP_URL=https://nac20.com`, Redis/MySQL, cookie Secure và phương thức `manual` cho SSH do admin điều phối. Vùng `nac.nac20.com` là đề xuất cho các máy NAC riêng của khách, cần TN20 xác nhận/quản lý DNS. Địa chỉ gửi SMTP, khóa ứng dụng, mật khẩu DB, token DNS và URL/SHA-256 bộ cài được để trống; các công tắc triển khai, SMTP khôi phục, nhận chuyển khoản và đăng ký khách đều chưa bật.
+
+Trong thư mục cài đặt production **mới**, sao chép mẫu này thành `.env`, điền bí mật trực tiếp trên máy chủ, tạo `APP_KEY` riêng rồi cấu hình reverse proxy HTTPS cho `nac20.com`. Không ghi đè `.env` đang vận hành hoặc dùng chung database với bản xem thử. Không bật các công tắc chỉ để vượt qua bảng kiểm.
+
+Tại thời điểm kiểm tra ngày 17/10/2026, truy vấn DNS công khai cho `nac20.com` chưa phân giải được qua Cloudflare (`1.1.1.1`) và Google (`8.8.8.8`). Cần xác nhận tên miền, cấu hình nameserver/vùng DNS và bản ghi A/AAAA theo IP VPS trước khi cấp TLS hoặc nhận khách. Kết quả này không xác nhận tình trạng đăng ký hay quyền sở hữu tên miền.
