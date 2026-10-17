@@ -36,6 +36,7 @@ Route::prefix('saas/api/v1')->group(function () {
         Route::delete('tenants/{tenant}/members/{member}', [AccountController::class, 'removeMember'])->middleware('throttle:tenant-team');
         Route::get('tenants', [TenantController::class, 'index']);
         Route::get('tenants/{tenant}', [TenantController::class, 'show']);
+        Route::get('tenants/{tenant}/access', [TenantController::class, 'access']);
         Route::post('tenants/{tenant}/sites', [TenantController::class, 'storeSite'])->middleware('throttle:tenant-sites');
         Route::post('tenants/{tenant}/environments', [TenantController::class, 'provision'])->middleware('throttle:tenant-install');
         Route::get('tenants/{tenant}/operations/{operation}', [TenantController::class, 'operation']);
@@ -60,6 +61,8 @@ Route::prefix('saas/api/v1')->group(function () {
             Route::post('operations/{operation}/retry', [AdminController::class, 'retry']);
             Route::post('operations/{operation}/cancel', [AdminController::class, 'cancel']);
             Route::post('environments/{environment}/handover', [AdminController::class, 'handover']);
+            Route::get('environments/{environment}/access', [AdminController::class, 'access']);
+            Route::post('environments/{environment}/access', [AdminController::class, 'updateAccess'])->middleware('throttle:account-security');
             Route::post('environments/{environment}/ssh-credentials', [AdminController::class, 'sshCredentials'])->middleware('throttle:account-security');
             Route::get('users', [AdminController::class, 'users']);
             Route::post('users/{user}', [AdminController::class, 'updateUser']);

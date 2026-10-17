@@ -382,3 +382,19 @@ TN20 đã chọn `nac20.com` cho SaaS. Mẫu `.env.production.example` chuẩn b
 Trong thư mục cài đặt production **mới**, sao chép mẫu này thành `.env`, điền bí mật trực tiếp trên máy chủ, tạo `APP_KEY` riêng rồi cấu hình reverse proxy HTTPS cho `nac20.com`. Không ghi đè `.env` đang vận hành hoặc dùng chung database với bản xem thử. Không bật các công tắc chỉ để vượt qua bảng kiểm.
 
 Tại thời điểm kiểm tra ngày 17/10/2026, truy vấn DNS công khai cho `nac20.com` chưa phân giải được qua Cloudflare (`1.1.1.1`) và Google (`8.8.8.8`). Cần xác nhận tên miền, cấu hình nameserver/vùng DNS và bản ghi A/AAAA theo IP VPS trước khi cấp TLS hoặc nhận khách. Kết quả này không xác nhận tình trạng đăng ký hay quyền sở hữu tên miền.
+
+## 17. Giao diện và công bố thông tin truy cập cho khách
+
+Giao diện giới thiệu sản phẩm, khu khách hàng và khu admin dùng cùng kiểu chữ, màu trạng thái, biểu mẫu và bảng dữ liệu. Trên điện thoại/tablet, nút **Mở điều hướng** mở menu thu gọn; Escape hoặc nút đóng trả lại tiêu điểm. Phím Tab đi trong menu khi đang mở. Liên kết **Đi đến nội dung chính** hỗ trợ người dùng bàn phím. Các trang trong cổng có fragment URL riêng; có thể tải lại và dùng Back/Forward.
+
+Sau nâng cấp, chạy migration mới và build lại giao diện. Các môi trường đã bàn giao từ trước không tự nhận URL/tài khoản giả; thông tin truy cập ban đầu để trống.
+
+1. TN20 hoàn tất cấu hình NAC20, TLS, Connector, kiểm tra mạng và nghiệm thu thực tế, rồi ghi nhận **Nghiệm thu / Bàn giao** như trước.
+2. Admin mở **Cài đặt cho khách → Môi trường đã tạo**, chọn **Thông tin truy cập** ở môi trường đã bàn giao.
+3. Nhập URL HTTPS thực tế đúng hostname của môi trường. Cổng `1443` được gợi ý theo bộ cài; sửa theo reverse proxy/cổng thực tế nếu khác. Không dùng URL tên miền ngoài, URL chứa thông tin đăng nhập, query hoặc fragment bí mật.
+4. Nhập tên tài khoản **đã tạo trong NAC20**, hướng dẫn bàn giao không chứa mật khẩu và xác nhận mật khẩu admin SaaS. Bấm **Công bố cho khách hàng**. Thao tác chỉ lưu thông tin bàn giao, không tự tạo tài khoản hay đổi mật khẩu bên NAC20.
+5. Chủ công ty/quản trị viên công ty vào **Truy cập NAC20** để xem URL, tên tài khoản, ngày bàn giao và hướng dẫn; có nút mở trang NAC20 và sao chép thông tin. Mật khẩu NAC20 vẫn bàn giao qua kênh riêng đã thống nhất, không lưu trong biểu mẫu này.
+
+Viewer/operator và công ty khác không được đọc thông tin tài khoản qua API; các trường bàn giao cũng được ẩn khỏi danh sách môi trường thông thường. Công ty bị tạm ngưng không đọc được thông tin qua endpoint này. Chưa bàn giao, dữ liệu mô phỏng hoặc chưa công bố thông tin thì khách thấy trạng thái chờ cùng nút trao đổi với TN20, không có nút đăng nhập giả.
+
+Thao tác công bố cần mật khẩu admin hiện tại, có giới hạn lượt thử và nhật ký riêng không chứa nội dung bí mật. Chưa có tự tạo tài khoản NAC20, đăng nhập một lần hoặc gửi email bàn giao tự động. Việc hoàn thiện giao diện không tự bật triển khai thật khi chưa có VPS/DNS để nghiệm thu.

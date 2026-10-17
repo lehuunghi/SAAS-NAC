@@ -235,6 +235,36 @@ class AdminController extends Controller
         return response()->json($record);
     }
 
+    public function access(Environment $environment): JsonResponse
+    {
+        return response()->json($environment->only(['access_url', 'access_account', 'access_instructions']))->header('Cache-Control', 'no-store');
+    }
+
+    public function updateAccess(Request $request, Environment $environment): JsonResponse
+    {
+        $data = $request->validate([
+            'current_password' => ['required', 'string', 'current_password:web'],
+            'access_url' => ['bail', 'required', 'url:https', 'max:2048', function (string $attribute, mixed $value, \Closure $fail) use ($environment): void {
+                $url = parse_url($value);
+                if (! is_array($url) || strtolower($url['host'] ?? '') !== strtolower($environment->hostname) || isset($url['user']) || isset($url['pass']) || isset($url['query']) || isset($url['fragment'])) {
+                    $fail('Dùng địa chỉ HTTPS đúng tên miền môi trường NAC20, không chứa mật khẩu hoặc tham số bí mật.');
+                }
+            }],
+            'access_account' => ['required', 'string', 'max:190'],
+            'access_instructions' => ['nullable', 'string', 'max:2000'],
+            'password' => ['prohibited'], 'ssh_password' => ['prohibited'], 'tenant_id' => ['prohibited'],
+        ]);
+        DB::transaction(function () use ($environment, $request, $data): void {
+            Tenant::whereKey($environment->tenant_id)->lockForUpdate()->firstOrFail();
+            $environment->refresh();
+            abort_unless($environment->status === 'ready' && $environment->driver !== 'simulation' && $environment->handed_over_at, 409, 'Chỉ công bố truy cập sau khi đã nghiệm thu và bàn giao máy thật.');
+            $environment->forceFill(collect($data)->only(['access_url', 'access_account', 'access_instructions'])->all())->save();
+            $this->audit($request, 'environment.access_published', $environment->id, $environment->tenant_id);
+        });
+
+        return response()->json(['message' => 'Đã cập nhật thông tin truy cập cho chủ công ty và quản trị viên.']);
+    }
+
     public function users(): JsonResponse
     {
         return response()->json(User::latest('id')->paginate(20, ['id', 'name', 'email', 'is_active', 'is_platform_admin', 'created_at']));

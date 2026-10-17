@@ -40,6 +40,21 @@ class TenantController extends Controller
         ]);
     }
 
+    public function access(Tenant $tenant): JsonResponse
+    {
+        Gate::authorize('manage', $tenant);
+        $environment = Environment::where('tenant_id', $tenant->id)->first();
+        $published = $environment && $environment->status === 'ready' && $environment->driver !== 'simulation' && $environment->handed_over_at && $environment->access_url;
+
+        return response()->json([
+            'available' => (bool) $published,
+            'url' => $published ? $environment->access_url : null,
+            'account' => $published ? $environment->access_account : null,
+            'instructions' => $published ? $environment->access_instructions : null,
+            'handed_over_at' => $published ? $environment->handed_over_at : null,
+        ])->header('Cache-Control', 'no-store');
+    }
+
     public function storeSite(Request $request, Tenant $tenant): JsonResponse
     {
         Gate::authorize('manage', $tenant);
