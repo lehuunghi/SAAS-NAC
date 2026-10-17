@@ -82,6 +82,7 @@ class PasswordRecoveryTest extends TestCase
 
             return true;
         });
+        $this->withoutVite();
         $this->get('/khoi-phuc-mat-khau')->assertOk()->assertHeader('Referrer-Policy', 'no-referrer')->assertHeader('Cache-Control', 'no-store, private');
     }
 
